@@ -1,1 +1,27 @@
-.vscode
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# Environment
+.env
+backend/.env
+
+# Local databases
+*.db
+backend/*.db
+
+# Test/cache artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
