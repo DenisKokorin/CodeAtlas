@@ -61,3 +61,29 @@ class RepositoryListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class GitHubRepositoryAnalyzeRequest(BaseModel):
+    repo_url: str = Field(..., min_length=1, max_length=255)
+
+    @field_validator("repo_url")
+    @classmethod
+    def validate_github_url(cls, value: str):
+        normalized_value = value.strip()
+
+        if not normalized_value.startswith("https://github.com/"):
+            raise ValueError("Repository URL must start with https://github.com/")
+
+        return normalized_value
+
+
+class GitHubRepositoryInfo(BaseModel):
+    full_name: str | None
+    html_url: str | None
+    description: str | None
+    language: str | None
+    stars: int
+    forks: int
+    open_issues: int
+    default_branch: str | None
+    updated_at: str | None

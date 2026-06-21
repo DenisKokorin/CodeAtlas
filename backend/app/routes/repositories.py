@@ -7,6 +7,16 @@ from app.database import get_db
 router = APIRouter(prefix="/repositories", tags=["Repositories"])
 
 
+@router.post(
+    "/analyze",
+    response_model=schemas.GitHubRepositoryInfo,
+)
+async def analyze_github_repository(
+    payload: schemas.GitHubRepositoryAnalyzeRequest,
+):
+    return await fetch_repository_info(payload.repo_url)
+
+
 @router.post("/", response_model=schemas.RepositoryResponse)
 def create_repository(
     repository: schemas.RepositoryCreate,
@@ -90,3 +100,26 @@ def delete_repository(
         raise HTTPException(status_code=404, detail="Repository not found")
 
     return repository
+
+
+@router.get(
+    "/{repository_id}/github-info",
+    response_model=schemas.GitHubRepositoryInfo,
+)
+async def read_repository_github_info(
+    repository_id: int,
+    db: Session = Depends(get_db),
+):
+    repository = crud.get_repository_by_id(db=db, repository_id=repository_id)
+
+    if repository is None:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    github_info = await fetch_repository_info(repository.repo_url)
+    crud.update_repository_github_metadata(
+        db=db,
+        repository=repository,
+        github_info=github_info,
+    )
+
+    return github_info

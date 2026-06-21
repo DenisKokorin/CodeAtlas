@@ -7,17 +7,25 @@ from app import models, schemas
 def create_repository(
     db: Session,
     repository: schemas.RepositoryCreate,
+    github_info: dict | None = None,
 ):
+    github_info = github_info or {}
+
     repository_name = (
         repository.name
+        or (github_info.get("full_name") or "").split("/")[-1]
         or repository.repo_url.rstrip("/").split("/")[-1].removesuffix(".git")
     )
 
     db_repository = models.Repository(
         name=repository_name,
         repo_url=repository.repo_url,
-        description=repository.description,
+        description=repository.description or github_info.get("description"),
         status=repository.status,
+        github_full_name=github_info.get("full_name"),
+        github_default_branch=github_info.get("default_branch"),
+        github_language=github_info.get("language"),
+        github_updated_at=github_info.get("updated_at"),
     )
 
     db.add(db_repository)
@@ -120,3 +128,22 @@ def delete_repository(db: Session, repository_id: int):
     db.commit()
 
     return db_repository
+
+
+def update_repository_github_metadata(
+    db: Session,
+    repository: models.Repository,
+    github_info: dict,
+):
+    repository.github_full_name = github_info.get("full_name")
+    repository.github_default_branch = github_info.get("default_branch")
+    repository.github_language = github_info.get("language")
+    repository.github_updated_at = github_info.get("updated_at")
+
+    if not repository.description and github_info.get("description"):
+        repository.description = github_info.get("description")
+
+    db.commit()
+    db.refresh(repository)
+
+    return repository
