@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import Base, engine
 from app.routes import repositories
+from app.routes import external, repositories
 
 Base.metadata.create_all(bind=engine)
 
@@ -37,3 +38,4 @@ def health_check():
 
 
 app.include_router(repositories.router)
+app.include_router(external.router)

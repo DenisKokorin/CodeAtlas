@@ -3,4 +3,5 @@ uvicorn
 SQLAlchemy
 python-dotenv
 pydantic
+httpx
 pytest==9.1.1
