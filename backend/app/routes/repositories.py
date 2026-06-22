@@ -3,6 +3,8 @@ from sqlalchemy.orm import Session
 
 from app import crud, schemas
 from app.database import get_db
+from app.services import documentation_service
+from app.services.github_service import fetch_repository_info
 
 router = APIRouter(prefix="/repositories", tags=["Repositories"])
 
@@ -18,13 +20,23 @@ async def analyze_github_repository(
 
 
 @router.post("/", response_model=schemas.RepositoryResponse)
-def create_repository(
+async def create_repository(
     repository: schemas.RepositoryCreate,
     db: Session = Depends(get_db),
 ):
+    github_info = None
+
+    try:
+        github_info = await fetch_repository_info(repository.repo_url)
+    except HTTPException:
+        # Репозиторий всё равно можно сохранить вручную, если GitHub API временно недоступен.
+        # Некорректный GitHub URL уже отсекается pydantic-валидацией и parse-функциями.
+        github_info = None
+
     return crud.create_repository(
         db=db,
         repository=repository,
+        github_info=github_info,
     )
 
 
@@ -123,3 +135,67 @@ async def read_repository_github_info(
     )
 
     return github_info
+
+
+@router.post(
+    "/{repository_id}/generate-documentation",
+    response_model=schemas.RepositoryDocumentationResponse,
+)
+async def generate_repository_documentation(
+    repository_id: int,
+    db: Session = Depends(get_db),
+):
+    repository = crud.get_repository_by_id(db=db, repository_id=repository_id)
+
+    if repository is None:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    crud.update_repository_status(db=db, repository=repository, status="processing")
+
+    try:
+        result = await documentation_service.generate_repository_documentation(
+            repository=repository,
+        )
+    except Exception:
+        crud.update_repository_status(db=db, repository=repository, status="error")
+        raise
+
+    updated_repository = crud.save_repository_documentation(
+        db=db,
+        repository=repository,
+        documentation=result["documentation"],
+        provider=result["provider"],
+        source_updated_at=result["source_updated_at"],
+    )
+
+    return {
+        "repository_id": updated_repository.id,
+        "documentation": updated_repository.generated_documentation,
+        "provider": updated_repository.documentation_provider,
+        "updated_at": updated_repository.documentation_updated_at,
+        "source_updated_at": updated_repository.documentation_source_updated_at,
+        "is_stale": updated_repository.documentation_is_stale,
+    }
+
+
+@router.get(
+    "/{repository_id}/documentation",
+    response_model=schemas.RepositoryDocumentationResponse,
+)
+def read_repository_documentation(
+    repository_id: int,
+    db: Session = Depends(get_db),
+):
+    repository = crud.get_repository_by_id(db=db, repository_id=repository_id)
+
+    if repository is None:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    return {
+        "repository_id": repository.id,
+        "documentation": repository.generated_documentation,
+        "provider": repository.documentation_provider,
+        "updated_at": repository.documentation_updated_at,
+        "source_updated_at": repository.documentation_source_updated_at,
+        "is_stale": repository.documentation_is_stale,
+    }
