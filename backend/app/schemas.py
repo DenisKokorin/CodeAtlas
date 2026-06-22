@@ -63,6 +63,15 @@ class RepositoryListResponse(BaseModel):
     page_size: int
 
 
+class RepositoryDocumentationResponse(BaseModel):
+    repository_id: int
+    documentation: Optional[str] = None
+    provider: Optional[str] = None
+    updated_at: Optional[datetime] = None
+    source_updated_at: Optional[str] = None
+    is_stale: bool = False
+
+
 class GitHubRepositoryAnalyzeRequest(BaseModel):
     repo_url: str = Field(..., min_length=1, max_length=255)
 

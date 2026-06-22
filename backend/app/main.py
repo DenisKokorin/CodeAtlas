@@ -2,7 +2,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import Base, engine
-from app.routes import repositories
 from app.routes import external, repositories
 
 Base.metadata.create_all(bind=engine)
@@ -10,7 +9,7 @@ Base.metadata.create_all(bind=engine)
 app = FastAPI(
     title="CodeAtlas API",
     version="0.1.0",
-    description="Backend API for repository documentation service.",
+    description="Backend API for GitHub repository documentation generation.",
 )
 
 app.add_middleware(

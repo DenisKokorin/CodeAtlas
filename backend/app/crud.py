@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -142,6 +144,39 @@ def update_repository_github_metadata(
 
     if not repository.description and github_info.get("description"):
         repository.description = github_info.get("description")
+
+    db.commit()
+    db.refresh(repository)
+
+    return repository
+
+
+def update_repository_status(
+    db: Session,
+    repository: models.Repository,
+    status: str,
+):
+    repository.status = status
+
+    db.commit()
+    db.refresh(repository)
+
+    return repository
+
+
+def save_repository_documentation(
+    db: Session,
+    repository: models.Repository,
+    documentation: str,
+    provider: str | None = None,
+    source_updated_at: str | None = None,
+):
+    repository.generated_documentation = documentation
+    repository.documentation_updated_at = datetime.now(timezone.utc)
+    repository.documentation_provider = provider
+    repository.documentation_source_updated_at = source_updated_at
+    repository.documentation_is_stale = False
+    repository.status = "ready"
 
     db.commit()
     db.refresh(repository)
