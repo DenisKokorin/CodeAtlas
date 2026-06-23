@@ -4,6 +4,80 @@ from typing import Optional
 from pydantic import BaseModel, Field, field_validator
 
 
+class UserBase(BaseModel):
+    email: str = Field(..., min_length=5, max_length=255)
+    username: str = Field(..., min_length=3, max_length=100)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str):
+        normalized_value = value.strip().lower()
+
+        if "@" not in normalized_value or "." not in normalized_value.split("@")[-1]:
+            raise ValueError("Invalid email")
+
+        return normalized_value
+
+    @field_validator("username")
+    @classmethod
+    def validate_username(cls, value: str):
+        normalized_value = value.strip()
+
+        if not normalized_value:
+            raise ValueError("Username cannot be empty")
+
+        return normalized_value
+
+
+class UserRegister(UserBase):
+    password: str = Field(..., min_length=6, max_length=72)
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, value: str):
+        if len(value.encode("utf-8")) > 72:
+            raise ValueError("Password is too long")
+
+        return value
+
+
+class UserLogin(BaseModel):
+    email: str = Field(..., min_length=5, max_length=255)
+    password: str = Field(..., min_length=1, max_length=72)
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: str):
+        return value.strip().lower()
+
+
+class UserResponse(BaseModel):
+    id: int
+    email: str
+    username: str
+    role: str
+    is_active: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    user: UserResponse
+
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str = Field(..., min_length=1)
+
+
+class LogoutRequest(BaseModel):
+    refresh_token: str = Field(..., min_length=1)
+
+
 class RepositoryBase(BaseModel):
     repo_url: str = Field(..., min_length=1, max_length=255)
     name: Optional[str] = Field(None, min_length=1, max_length=100)
@@ -33,6 +107,7 @@ class RepositoryUpdate(BaseModel):
 
 class RepositoryResponse(BaseModel):
     id: int
+    owner_id: int
     name: str
     repo_url: str
     description: Optional[str] = None
