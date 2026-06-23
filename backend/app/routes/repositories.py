@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app import crud, schemas
+from app import crud, models, schemas
+from app.auth import get_current_user
 from app.database import get_db
 from app.services import documentation_service
 from app.services.github_service import fetch_repository_info
@@ -15,6 +16,7 @@ router = APIRouter(prefix="/repositories", tags=["Repositories"])
 )
 async def analyze_github_repository(
     payload: schemas.GitHubRepositoryAnalyzeRequest,
+    current_user: models.User = Depends(get_current_user),
 ):
     return await fetch_repository_info(payload.repo_url)
 
@@ -23,6 +25,7 @@ async def analyze_github_repository(
 async def create_repository(
     repository: schemas.RepositoryCreate,
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
 ):
     github_info = None
 
@@ -36,6 +39,7 @@ async def create_repository(
     return crud.create_repository(
         db=db,
         repository=repository,
+        owner_id=current_user.id,
         github_info=github_info,
     )
 
@@ -52,9 +56,11 @@ def read_repositories(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=10, ge=1, le=50),
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
 ):
     return crud.get_repositories(
         db=db,
+        owner_id=current_user.id,
         search=search,
         status=status,
         sort_by=sort_by,
@@ -68,10 +74,12 @@ def read_repositories(
 def read_repository(
     repository_id: int,
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
 ):
     repository = crud.get_repository_by_id(
         db=db,
         repository_id=repository_id,
+        owner_id=current_user.id,
     )
 
     if repository is None:
@@ -85,10 +93,12 @@ def update_repository(
     repository_id: int,
     repository_data: schemas.RepositoryUpdate,
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
 ):
     repository = crud.update_repository(
         db=db,
         repository_id=repository_id,
+        owner_id=current_user.id,
         repository_data=repository_data,
     )
 
@@ -102,10 +112,12 @@ def update_repository(
 def delete_repository(
     repository_id: int,
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
 ):
     repository = crud.delete_repository(
         db=db,
         repository_id=repository_id,
+        owner_id=current_user.id,
     )
 
     if repository is None:
@@ -121,8 +133,13 @@ def delete_repository(
 async def read_repository_github_info(
     repository_id: int,
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
 ):
-    repository = crud.get_repository_by_id(db=db, repository_id=repository_id)
+    repository = crud.get_repository_by_id(
+        db=db,
+        repository_id=repository_id,
+        owner_id=current_user.id,
+    )
 
     if repository is None:
         raise HTTPException(status_code=404, detail="Repository not found")
@@ -144,8 +161,13 @@ async def read_repository_github_info(
 async def generate_repository_documentation(
     repository_id: int,
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
 ):
-    repository = crud.get_repository_by_id(db=db, repository_id=repository_id)
+    repository = crud.get_repository_by_id(
+        db=db,
+        repository_id=repository_id,
+        owner_id=current_user.id,
+    )
 
     if repository is None:
         raise HTTPException(status_code=404, detail="Repository not found")
@@ -185,8 +207,13 @@ async def generate_repository_documentation(
 def read_repository_documentation(
     repository_id: int,
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
 ):
-    repository = crud.get_repository_by_id(db=db, repository_id=repository_id)
+    repository = crud.get_repository_by_id(
+        db=db,
+        repository_id=repository_id,
+        owner_id=current_user.id,
+    )
 
     if repository is None:
         raise HTTPException(status_code=404, detail="Repository not found")

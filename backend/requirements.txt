@@ -4,4 +4,6 @@ SQLAlchemy
 python-dotenv
 httpx
 pydantic
+python-jose[cryptography]
+bcrypt
 pytest==9.1.1
