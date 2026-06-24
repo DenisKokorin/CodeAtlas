@@ -6,4 +6,6 @@ httpx
 pydantic
 python-jose[cryptography]
 bcrypt
+markdown
+python-docx
 pytest==9.1.1
