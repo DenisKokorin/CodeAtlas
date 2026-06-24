@@ -240,7 +240,7 @@ def export_as_docx(
     style.font.size = Pt(11)
     style.paragraph_format.space_after = Pt(6)
 
-    title = doc.add_heading(repository.name, level=1)
+    doc.add_heading(repository.name, level=1)
 
     if repository.github_full_name:
         p = doc.add_paragraph()
@@ -311,7 +311,6 @@ def export_as_docx(
 def _feed_markdown_to_docx(doc, md: str) -> None:
 
     from docx.shared import Pt, Inches, RGBColor
-    from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.oxml.ns import qn
 
     lines = md.split("\n")
@@ -320,7 +319,6 @@ def _feed_markdown_to_docx(doc, md: str) -> None:
     code_lines: list[str] = []
     in_table = False
     table_data: list[list[str]] = []
-    list_type: str | None = None
 
     def flush_code():
         nonlocal code_lines, in_code_block
@@ -400,7 +398,7 @@ def _feed_markdown_to_docx(doc, md: str) -> None:
             if level <= 2:
                 doc.add_heading(text, level=level)
             elif level == 3:
-                h = doc.add_heading(text, level=3)
+                doc.add_heading(text, level=3)
             else:
                 p = doc.add_paragraph()
                 run = p.add_run(text)
@@ -461,6 +459,7 @@ def _feed_markdown_to_docx(doc, md: str) -> None:
 
 
 def _add_inline_text(paragraph, text: str) -> None:
+    from docx.shared import Pt
 
     parts = re.split(r"(\*\*.+?\*\*|__.+?__)", text)
     for part in parts:
