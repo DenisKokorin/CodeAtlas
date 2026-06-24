@@ -7,7 +7,8 @@ CodeAtlas — backend API для анализа GitHub-репозиториев 
 * добавлять GitHub-репозитории;
 * получать информацию о репозитории;
 * генерировать Markdown-документацию;
-* хранить результат генерации;
+* хранить документацию по версиям приложения и ревизиям;
+* экспортировать документацию в разных форматах;
 * работать с API через Swagger UI;
 * использовать JWT-авторизацию для защиты основных эндпоинтов.
 
@@ -46,7 +47,7 @@ copy .env.example .env
 Запустите backend:
 
 ```bash
-python uvicorn app.main:app --reload
+python -m uvicorn app.main:app --reload
 ```
 
 После запуска API будет доступно по адресу:
@@ -140,11 +141,95 @@ PUT    /repositories/{repository_id}
 DELETE /repositories/{repository_id}
 ```
 
-Для генерации и получения документации используются endpoints:
+Для генерации и получения актуальной документации используются endpoints:
 
 ```text
 POST /repositories/{repository_id}/generate-documentation
 GET  /repositories/{repository_id}/documentation
+```
+
+При генерации документации нужно вручную указать версию приложения:
+
+```json
+{
+  "app_version": "1.0.0"
+}
+```
+
+## Управление версиями документации
+
+CodeAtlas хранит документацию по версиям приложения.
+
+Пользователь вручную указывает `app_version` при генерации документации. Например:
+
+```text
+App version 1.0.0
+```
+
+Если для этой версии приложения документация генерируется впервые, создаётся первая ревизия:
+
+```text
+Documentation 1.0.0 revision 1
+```
+
+Если документация повторно генерируется для той же версии приложения, создаётся новая ревизия:
+
+```text
+Documentation 1.0.0 revision 2
+```
+
+Если пользователь указывает новую версию приложения, ревизии для неё начинаются заново:
+
+```text
+Documentation 1.1.0 revision 1
+```
+
+Последняя созданная документация считается актуальной и отдаётся через:
+
+```text
+GET /repositories/{repository_id}/documentation
+```
+
+Для просмотра истории версий используются endpoints:
+
+```text
+GET /repositories/{repository_id}/documentation/versions
+GET /repositories/{repository_id}/documentation/versions/{version_id}
+```
+
+## Мультиформатный экспорт
+
+Документация хранится в базе в Markdown-формате. Остальные форматы не сохраняются отдельно, а генерируются на лету при экспорте.
+
+Поддерживаемые форматы:
+
+```text
+markdown
+txt
+html
+docx
+json
+```
+
+Экспорт актуальной документации:
+
+```text
+GET /repositories/{repository_id}/export?format=docx
+```
+
+Экспорт конкретной версии документации:
+
+```text
+GET /repositories/{repository_id}/documentation/versions/{version_id}/export?format=docx
+```
+
+Примеры:
+
+```text
+GET /repositories/1/export?format=markdown
+GET /repositories/1/export?format=html
+GET /repositories/1/documentation/versions/2/export?format=docx
+GET /repositories/1/documentation/versions/2/export?format=json
 ```
 
 ## GitHub-интеграция
@@ -195,3 +280,5 @@ backend/.env.example
 ```bash
 copy .env.example .env
 ```
+
+Файл `.env` не должен попадать в Git.

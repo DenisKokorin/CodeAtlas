@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app import models, schemas
@@ -274,15 +274,91 @@ def update_repository_status(
     return repository
 
 
-def save_repository_documentation(
+def get_next_documentation_revision_number(
+    db: Session,
+    repository_id: int,
+    app_version: str,
+) -> int:
+    latest_revision_number = (
+        db.query(func.max(models.DocumentationVersion.revision_number))
+        .filter(
+            models.DocumentationVersion.repository_id == repository_id,
+            models.DocumentationVersion.app_version == app_version,
+        )
+        .scalar()
+    )
+
+    return (latest_revision_number or 0) + 1
+
+
+def create_documentation_version(
     db: Session,
     repository: models.Repository,
+    app_version: str,
     documentation: str,
     provider: str | None = None,
     source_updated_at: str | None = None,
 ):
+    normalized_app_version = app_version.strip()
+    revision_number = get_next_documentation_revision_number(
+        db=db,
+        repository_id=repository.id,
+        app_version=normalized_app_version,
+    )
+
+    db.query(models.DocumentationVersion).filter(
+        models.DocumentationVersion.repository_id == repository.id,
+        models.DocumentationVersion.is_latest_for_repository.is_(True),
+    ).update(
+        {models.DocumentationVersion.is_latest_for_repository: False},
+        synchronize_session=False,
+    )
+
+    db.query(models.DocumentationVersion).filter(
+        models.DocumentationVersion.repository_id == repository.id,
+        models.DocumentationVersion.app_version == normalized_app_version,
+        models.DocumentationVersion.is_latest_for_app_version.is_(True),
+    ).update(
+        {models.DocumentationVersion.is_latest_for_app_version: False},
+        synchronize_session=False,
+    )
+
+    db_version = models.DocumentationVersion(
+        repository_id=repository.id,
+        app_version=normalized_app_version,
+        revision_number=revision_number,
+        documentation=documentation,
+        provider=provider,
+        source_updated_at=source_updated_at,
+        is_latest_for_app_version=True,
+        is_latest_for_repository=True,
+    )
+
+    db.add(db_version)
+    db.flush()
+
+    return db_version
+
+
+def save_repository_documentation(
+    db: Session,
+    repository: models.Repository,
+    documentation: str,
+    app_version: str,
+    provider: str | None = None,
+    source_updated_at: str | None = None,
+):
+    documentation_version = create_documentation_version(
+        db=db,
+        repository=repository,
+        app_version=app_version,
+        documentation=documentation,
+        provider=provider,
+        source_updated_at=source_updated_at,
+    )
+
     repository.generated_documentation = documentation
-    repository.documentation_updated_at = datetime.now(timezone.utc)
+    repository.documentation_updated_at = documentation_version.created_at
     repository.documentation_provider = provider
     repository.documentation_source_updated_at = source_updated_at
     repository.documentation_is_stale = False
@@ -290,5 +366,54 @@ def save_repository_documentation(
 
     db.commit()
     db.refresh(repository)
+    db.refresh(documentation_version)
 
-    return repository
+    return documentation_version
+
+
+def get_documentation_versions(
+    db: Session,
+    repository_id: int,
+):
+    return (
+        db.query(models.DocumentationVersion)
+        .filter(models.DocumentationVersion.repository_id == repository_id)
+        .order_by(
+            models.DocumentationVersion.created_at.desc(),
+            models.DocumentationVersion.id.desc(),
+        )
+        .all()
+    )
+
+
+def get_documentation_version_by_id(
+    db: Session,
+    repository_id: int,
+    version_id: int,
+):
+    return (
+        db.query(models.DocumentationVersion)
+        .filter(
+            models.DocumentationVersion.id == version_id,
+            models.DocumentationVersion.repository_id == repository_id,
+        )
+        .first()
+    )
+
+
+def get_latest_documentation_version(
+    db: Session,
+    repository_id: int,
+):
+    return (
+        db.query(models.DocumentationVersion)
+        .filter(
+            models.DocumentationVersion.repository_id == repository_id,
+            models.DocumentationVersion.is_latest_for_repository.is_(True),
+        )
+        .order_by(
+            models.DocumentationVersion.created_at.desc(),
+            models.DocumentationVersion.id.desc(),
+        )
+        .first()
+    )
