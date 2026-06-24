@@ -3,15 +3,82 @@ import json
 import os
 import re
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from typing import Literal
 
-from app.models import Repository
+from app.models import DocumentationVersion, Repository
 
 ExportFormat = Literal["markdown", "txt", "html", "docx", "json"]
 
 _BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _TEMPLATE_DIR = os.path.join(_BASE_DIR, "templates")
 _TEMPLATE_PATH = os.path.join(_TEMPLATE_DIR, "export.html")
+
+
+def _safe_filename_part(value: str | None) -> str:
+    cleaned_value = re.sub(r"[^a-zA-Z0-9._-]+", "-", value or "")
+    cleaned_value = cleaned_value.strip("-._")
+
+    return cleaned_value or "documentation"
+
+
+def _build_export_source(
+    repository: Repository,
+    documentation_version: DocumentationVersion | None = None,
+):
+    if documentation_version is None:
+        export_title = repository.name
+        return SimpleNamespace(
+            id=repository.id,
+            name=repository.name,
+            export_title=export_title,
+            repo_url=repository.repo_url,
+            description=repository.description,
+            github_full_name=repository.github_full_name,
+            github_language=repository.github_language,
+            github_default_branch=repository.github_default_branch,
+            generated_documentation=repository.generated_documentation,
+            documentation_provider=repository.documentation_provider,
+            documentation_updated_at=repository.documentation_updated_at,
+            documentation_source_updated_at=repository.documentation_source_updated_at,
+            documentation_is_stale=repository.documentation_is_stale,
+            documentation_app_version=None,
+            documentation_revision_number=None,
+            documentation_display_name=None,
+        )
+
+    export_title = f"{repository.name} - {documentation_version.display_name}"
+
+    return SimpleNamespace(
+        id=repository.id,
+        name=repository.name,
+        export_title=export_title,
+        repo_url=repository.repo_url,
+        description=repository.description,
+        github_full_name=repository.github_full_name,
+        github_language=repository.github_language,
+        github_default_branch=repository.github_default_branch,
+        generated_documentation=documentation_version.documentation,
+        documentation_provider=documentation_version.provider,
+        documentation_updated_at=documentation_version.created_at,
+        documentation_source_updated_at=documentation_version.source_updated_at,
+        documentation_is_stale=False,
+        documentation_app_version=documentation_version.app_version,
+        documentation_revision_number=documentation_version.revision_number,
+        documentation_display_name=documentation_version.display_name,
+    )
+
+
+def _build_export_filename(repository, extension: str) -> str:
+    base_name = _safe_filename_part(repository.name)
+    app_version = getattr(repository, "documentation_app_version", None)
+    revision_number = getattr(repository, "documentation_revision_number", None)
+
+    if app_version and revision_number:
+        version_part = _safe_filename_part(app_version)
+        return f"{base_name}-{version_part}-revision-{revision_number}.{extension}"
+
+    return f"{base_name}-documentation.{extension}"
 
 
 def _load_html_template() -> str:
@@ -50,6 +117,22 @@ def _build_meta_html(repository: Repository) -> str:
             f"</span>"
         )
 
+    if getattr(repository, "documentation_app_version", None):
+        pieces.append(
+            f'<span class="meta-item">'
+            f'<span class="meta-label">App version:</span> '
+            f"{repository.documentation_app_version}"
+            f"</span>"
+        )
+
+    if getattr(repository, "documentation_revision_number", None):
+        pieces.append(
+            f'<span class="meta-item">'
+            f'<span class="meta-label">Revision:</span> '
+            f"{repository.documentation_revision_number}"
+            f"</span>"
+        )
+
     if repository.documentation_provider:
         pieces.append(
             f'<span class="meta-item">'
@@ -81,6 +164,10 @@ def _build_meta_text(repository: Repository) -> str:
         lines.append(f"Repository: {repository.github_full_name}")
     if repository.github_language:
         lines.append(f"Language: {repository.github_language}")
+    if getattr(repository, "documentation_app_version", None):
+        lines.append(f"App version: {repository.documentation_app_version}")
+    if getattr(repository, "documentation_revision_number", None):
+        lines.append(f"Documentation revision: {repository.documentation_revision_number}")
     if repository.documentation_provider:
         lines.append(f"Provider: {repository.documentation_provider}")
     if repository.documentation_updated_at:
@@ -146,7 +233,7 @@ def export_as_markdown(
 ) -> tuple[str, str, str]:
 
     content = repository.generated_documentation or ""
-    filename = f"{repository.name}-documentation.md"
+    filename = _build_export_filename(repository, "md")
     return content, "text/markdown; charset=utf-8", filename
 
 
@@ -162,12 +249,12 @@ def export_as_html(
     template = _load_html_template()
 
     page = template
-    page = page.replace("{{ title }}", repository.name)
+    page = page.replace("{{ title }}", getattr(repository, "export_title", repository.name))
     page = page.replace("{{ meta_html }}", meta_block)
     page = page.replace("{{ content }}", html_body)
     page = page.replace("{{ date }}", now_str)
 
-    filename = f"{repository.name}-documentation.html"
+    filename = _build_export_filename(repository, "html")
     return page, "text/html; charset=utf-8", filename
 
 
@@ -184,6 +271,11 @@ def export_as_json(
             "description": repository.description,
             "language": repository.github_language,
             "default_branch": repository.github_default_branch,
+        },
+        "version": {
+            "app_version": getattr(repository, "documentation_app_version", None),
+            "revision_number": getattr(repository, "documentation_revision_number", None),
+            "display_name": getattr(repository, "documentation_display_name", None),
         },
         "documentation": {
             "content": repository.generated_documentation,
@@ -203,7 +295,7 @@ def export_as_json(
     }
 
     content = json.dumps(payload, indent=2, ensure_ascii=False)
-    filename = f"{repository.name}-documentation.json"
+    filename = _build_export_filename(repository, "json")
     return content, "application/json; charset=utf-8", filename
 
 
@@ -215,13 +307,13 @@ def export_as_txt(
     body = _markdown_to_plain_text(raw_md)
     meta = _build_meta_text(repository)
 
-    header = f"# {repository.name}\n"
+    header = f"# {getattr(repository, 'export_title', repository.name)}\n"
     if meta:
         header += f"\n{meta}\n"
     header += "\n"
 
     content = header + body + "\n"
-    filename = f"{repository.name}-documentation.txt"
+    filename = _build_export_filename(repository, "txt")
     return content, "text/plain; charset=utf-8", filename
 
 
@@ -240,7 +332,7 @@ def export_as_docx(
     style.font.size = Pt(11)
     style.paragraph_format.space_after = Pt(6)
 
-    doc.add_heading(repository.name, level=1)
+    doc.add_heading(getattr(repository, "export_title", repository.name), level=1)
 
     if repository.github_full_name:
         p = doc.add_paragraph()
@@ -259,6 +351,26 @@ def export_as_docx(
         run.font.size = Pt(9)
         run.font.color.rgb = RGBColor(100, 116, 139)
         run = p.add_run(repository.github_language)
+        run.font.size = Pt(9)
+        run.font.color.rgb = RGBColor(100, 116, 139)
+
+    if getattr(repository, "documentation_app_version", None):
+        p = doc.add_paragraph()
+        run = p.add_run("App version: ")
+        run.bold = True
+        run.font.size = Pt(9)
+        run.font.color.rgb = RGBColor(100, 116, 139)
+        run = p.add_run(repository.documentation_app_version)
+        run.font.size = Pt(9)
+        run.font.color.rgb = RGBColor(100, 116, 139)
+
+    if getattr(repository, "documentation_revision_number", None):
+        p = doc.add_paragraph()
+        run = p.add_run("Documentation revision: ")
+        run.bold = True
+        run.font.size = Pt(9)
+        run.font.color.rgb = RGBColor(100, 116, 139)
+        run = p.add_run(str(repository.documentation_revision_number))
         run.font.size = Pt(9)
         run.font.color.rgb = RGBColor(100, 116, 139)
 
@@ -301,7 +413,7 @@ def export_as_docx(
     doc.save(buf)
     buf.seek(0)
 
-    filename = f"{repository.name}-documentation.docx"
+    filename = _build_export_filename(repository, "docx")
     return buf.getvalue(), (
         "application/vnd.openxmlformats-officedocument."
         "wordprocessingml.document"
@@ -500,6 +612,7 @@ EXPORTERS: dict[ExportFormat, callable] = {
 def export_documentation(
     repository: Repository,
     fmt: ExportFormat,
+    documentation_version: DocumentationVersion | None = None,
 ) -> tuple[str | bytes, str, str]:
 
     exporter = EXPORTERS.get(fmt)
@@ -510,4 +623,9 @@ def export_documentation(
             f"Available formats: {', '.join(EXPORTERS)}"
         )
 
-    return exporter(repository)
+    export_source = _build_export_source(
+        repository=repository,
+        documentation_version=documentation_version,
+    )
+
+    return exporter(export_source)

@@ -138,6 +138,52 @@ class RepositoryListResponse(BaseModel):
     page_size: int
 
 
+class DocumentationGenerationRequest(BaseModel):
+    app_version: str = Field(
+        ...,
+        min_length=1,
+        max_length=50,
+        description="Manual application version, for example 1.0.0 or 1.1.0",
+        examples=["1.0.0"],
+    )
+
+    @field_validator("app_version")
+    @classmethod
+    def validate_app_version(cls, value: str):
+        normalized_value = value.strip()
+
+        if not normalized_value:
+            raise ValueError("Application version cannot be empty")
+
+        return normalized_value
+
+
+class DocumentationVersionListItem(BaseModel):
+    id: int
+    repository_id: int
+    app_version: str
+    revision_number: int
+    display_name: str
+    provider: Optional[str] = None
+    source_updated_at: Optional[str] = None
+    is_latest_for_app_version: bool
+    is_latest_for_repository: bool
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class DocumentationVersionResponse(DocumentationVersionListItem):
+    documentation: str
+
+
+class DocumentationVersionListResponse(BaseModel):
+    items: list[DocumentationVersionListItem]
+    total: int
+
+
 class RepositoryDocumentationResponse(BaseModel):
     repository_id: int
     documentation: Optional[str] = None
@@ -145,6 +191,10 @@ class RepositoryDocumentationResponse(BaseModel):
     updated_at: Optional[datetime] = None
     source_updated_at: Optional[str] = None
     is_stale: bool = False
+    documentation_version_id: Optional[int] = None
+    app_version: Optional[str] = None
+    revision_number: Optional[int] = None
+    display_name: Optional[str] = None
 
 
 class GitHubRepositoryAnalyzeRequest(BaseModel):

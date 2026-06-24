@@ -160,6 +160,7 @@ async def read_repository_github_info(
 )
 async def generate_repository_documentation(
     repository_id: int,
+    payload: schemas.DocumentationGenerationRequest,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
@@ -182,22 +183,90 @@ async def generate_repository_documentation(
         crud.update_repository_status(db=db, repository=repository, status="error")
         raise
 
-    updated_repository = crud.save_repository_documentation(
+    documentation_version = crud.save_repository_documentation(
         db=db,
         repository=repository,
         documentation=result["documentation"],
+        app_version=payload.app_version,
         provider=result["provider"],
         source_updated_at=result["source_updated_at"],
     )
 
     return {
-        "repository_id": updated_repository.id,
-        "documentation": updated_repository.generated_documentation,
-        "provider": updated_repository.documentation_provider,
-        "updated_at": updated_repository.documentation_updated_at,
-        "source_updated_at": updated_repository.documentation_source_updated_at,
-        "is_stale": updated_repository.documentation_is_stale,
+        "repository_id": repository.id,
+        "documentation": documentation_version.documentation,
+        "provider": documentation_version.provider,
+        "updated_at": documentation_version.created_at,
+        "source_updated_at": documentation_version.source_updated_at,
+        "is_stale": repository.documentation_is_stale,
+        "documentation_version_id": documentation_version.id,
+        "app_version": documentation_version.app_version,
+        "revision_number": documentation_version.revision_number,
+        "display_name": documentation_version.display_name,
     }
+
+
+@router.get(
+    "/{repository_id}/documentation/versions",
+    response_model=schemas.DocumentationVersionListResponse,
+)
+def read_documentation_versions(
+    repository_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    repository = crud.get_repository_by_id(
+        db=db,
+        repository_id=repository_id,
+        owner_id=current_user.id,
+    )
+
+    if repository is None:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    versions = crud.get_documentation_versions(
+        db=db,
+        repository_id=repository.id,
+    )
+
+    return {
+        "items": versions,
+        "total": len(versions),
+    }
+
+
+@router.get(
+    "/{repository_id}/documentation/versions/{version_id}",
+    response_model=schemas.DocumentationVersionResponse,
+)
+def read_documentation_version(
+    repository_id: int,
+    version_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    repository = crud.get_repository_by_id(
+        db=db,
+        repository_id=repository_id,
+        owner_id=current_user.id,
+    )
+
+    if repository is None:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    documentation_version = crud.get_documentation_version_by_id(
+        db=db,
+        repository_id=repository.id,
+        version_id=version_id,
+    )
+
+    if documentation_version is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Documentation version not found",
+        )
+
+    return documentation_version
 
 
 @router.get(
@@ -218,6 +287,11 @@ def read_repository_documentation(
     if repository is None:
         raise HTTPException(status_code=404, detail="Repository not found")
 
+    latest_version = crud.get_latest_documentation_version(
+        db=db,
+        repository_id=repository.id,
+    )
+
     return {
         "repository_id": repository.id,
         "documentation": repository.generated_documentation,
@@ -225,4 +299,8 @@ def read_repository_documentation(
         "updated_at": repository.documentation_updated_at,
         "source_updated_at": repository.documentation_source_updated_at,
         "is_stale": repository.documentation_is_stale,
+        "documentation_version_id": latest_version.id if latest_version else None,
+        "app_version": latest_version.app_version if latest_version else None,
+        "revision_number": latest_version.revision_number if latest_version else None,
+        "display_name": latest_version.display_name if latest_version else None,
     }

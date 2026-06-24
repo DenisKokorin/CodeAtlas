@@ -1,6 +1,15 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -75,6 +84,59 @@ class Repository(Base):
     )
 
     owner = relationship("User", back_populates="repositories")
+    documentation_versions = relationship(
+        "DocumentationVersion",
+        back_populates="repository",
+        cascade="all, delete-orphan",
+    )
+
+
+class DocumentationVersion(Base):
+    __tablename__ = "documentation_versions"
+    __table_args__ = (
+        UniqueConstraint(
+            "repository_id",
+            "app_version",
+            "revision_number",
+            name="uq_documentation_version_revision",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    repository_id = Column(
+        Integer,
+        ForeignKey("repositories.id"),
+        nullable=False,
+        index=True,
+    )
+    app_version = Column(String(50), nullable=False, index=True)
+    revision_number = Column(Integer, nullable=False)
+    documentation = Column(Text, nullable=False)
+    provider = Column(String(50), nullable=True)
+    source_updated_at = Column(String(50), nullable=True)
+    is_latest_for_app_version = Column(Boolean, nullable=False, default=True)
+    is_latest_for_repository = Column(Boolean, nullable=False, default=True)
+
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    repository = relationship(
+        "Repository",
+        back_populates="documentation_versions",
+    )
+
+    @property
+    def display_name(self) -> str:
+        return f"Documentation {self.app_version} revision {self.revision_number}"
 
 
 class RefreshToken(Base):
