@@ -417,3 +417,228 @@ def get_latest_documentation_version(
         )
         .first()
     )
+
+
+# --- RAG / Chat CRUD ---
+
+
+def delete_knowledge_chunks_by_repository(db: Session, repository_id: int) -> None:
+    db.query(models.KnowledgeChunk).filter(
+        models.KnowledgeChunk.repository_id == repository_id
+    ).delete()
+    db.commit()
+
+
+def save_knowledge_chunks(
+    db: Session,
+    repository_id: int,
+    chunks: list[dict],
+) -> list[models.KnowledgeChunk]:
+    db_chunks: list[models.KnowledgeChunk] = []
+
+    for chunk in chunks:
+        db_chunk = models.KnowledgeChunk(
+            repository_id=repository_id,
+            chunk_type=chunk["chunk_type"],
+            content=chunk["content"],
+            embedding=chunk.get("embedding"),
+            metadata_json=chunk.get("metadata_json"),
+            source_path=chunk.get("source_path"),
+            language=chunk.get("language"),
+            token_count=chunk.get("token_count"),
+        )
+        db.add(db_chunk)
+        db_chunks.append(db_chunk)
+
+    db.commit()
+
+    for db_chunk in db_chunks:
+        db.refresh(db_chunk)
+
+    return db_chunks
+
+
+def get_knowledge_chunks_by_repository(
+    db: Session,
+    repository_id: int,
+) -> list[models.KnowledgeChunk]:
+    return (
+        db.query(models.KnowledgeChunk)
+        .filter(models.KnowledgeChunk.repository_id == repository_id)
+        .all()
+    )
+
+
+def search_knowledge_chunks_keyword(
+    db: Session,
+    repository_id: int,
+    query: str,
+    top_k: int = 8,
+) -> list[dict]:
+    words = [w.strip().lower() for w in query.split() if len(w.strip()) > 2]
+    chunks = (
+        db.query(models.KnowledgeChunk)
+        .filter(models.KnowledgeChunk.repository_id == repository_id)
+        .all()
+    )
+
+    scored: list[dict] = []
+
+    for chunk in chunks:
+        content_lower = chunk.content.lower()
+        score = 0
+
+        for word in words:
+            score += content_lower.count(word)
+
+        if score > 0:
+            scored.append(
+                {
+                    "chunk_id": chunk.id,
+                    "content": chunk.content,
+                    "source_path": chunk.source_path,
+                    "chunk_type": chunk.chunk_type,
+                    "relevance_score": score,
+                }
+            )
+
+    scored.sort(key=lambda x: x["relevance_score"], reverse=True)
+
+    return scored[:top_k]
+
+
+def get_knowledge_chunk_count_by_repository(
+    db: Session,
+    repository_id: int,
+) -> dict[str, int]:
+    chunks = (
+        db.query(models.KnowledgeChunk)
+        .filter(models.KnowledgeChunk.repository_id == repository_id)
+        .all()
+    )
+
+    counts: dict[str, int] = {}
+
+    for chunk in chunks:
+        counts[chunk.chunk_type] = counts.get(chunk.chunk_type, 0) + 1
+
+    return counts
+
+
+def create_conversation(
+    db: Session,
+    repository_id: int,
+    user_id: int,
+    title: str | None = None,
+) -> models.ChatConversation:
+    db_conversation = models.ChatConversation(
+        repository_id=repository_id,
+        user_id=user_id,
+        title=title,
+    )
+    db.add(db_conversation)
+    db.commit()
+    db.refresh(db_conversation)
+
+    return db_conversation
+
+
+def get_conversations_by_repository(
+    db: Session,
+    repository_id: int,
+    user_id: int,
+) -> list[models.ChatConversation]:
+    return (
+        db.query(models.ChatConversation)
+        .filter(
+            models.ChatConversation.repository_id == repository_id,
+            models.ChatConversation.user_id == user_id,
+        )
+        .order_by(models.ChatConversation.updated_at.desc())
+        .all()
+    )
+
+
+def get_conversation_by_id(
+    db: Session,
+    conversation_id: int,
+    repository_id: int,
+    user_id: int,
+) -> models.ChatConversation | None:
+    return (
+        db.query(models.ChatConversation)
+        .filter(
+            models.ChatConversation.id == conversation_id,
+            models.ChatConversation.repository_id == repository_id,
+            models.ChatConversation.user_id == user_id,
+        )
+        .first()
+    )
+
+
+def delete_conversation(
+    db: Session,
+    conversation_id: int,
+    repository_id: int,
+    user_id: int,
+) -> models.ChatConversation | None:
+    db_conversation = get_conversation_by_id(
+        db=db,
+        conversation_id=conversation_id,
+        repository_id=repository_id,
+        user_id=user_id,
+    )
+
+    if db_conversation is None:
+        return None
+
+    db.delete(db_conversation)
+    db.commit()
+
+    return db_conversation
+
+
+def create_message(
+    db: Session,
+    conversation_id: int,
+    role: str,
+    content: str,
+    sources_json: str | None = None,
+) -> models.ChatMessage:
+    db_message = models.ChatMessage(
+        conversation_id=conversation_id,
+        role=role,
+        content=content,
+        sources_json=sources_json,
+    )
+    db.add(db_message)
+    db.commit()
+    db.refresh(db_message)
+
+    return db_message
+
+
+def get_messages_by_conversation(
+    db: Session,
+    conversation_id: int,
+) -> list[models.ChatMessage]:
+    return (
+        db.query(models.ChatMessage)
+        .filter(models.ChatMessage.conversation_id == conversation_id)
+        .order_by(models.ChatMessage.created_at.asc())
+        .all()
+    )
+
+
+def get_recent_messages_by_conversation(
+    db: Session,
+    conversation_id: int,
+    limit: int = 10,
+) -> list[models.ChatMessage]:
+    return (
+        db.query(models.ChatMessage)
+        .filter(models.ChatMessage.conversation_id == conversation_id)
+        .order_by(models.ChatMessage.created_at.asc())
+        .limit(limit)
+        .all()
+    )
