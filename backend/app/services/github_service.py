@@ -56,6 +56,41 @@ def build_github_headers(accept: str = "application/vnd.github+json") -> dict:
     return headers
 
 
+def raise_github_api_error(response: httpx.Response, fallback_detail: str) -> None:
+    """Raise a user-facing HTTPException for GitHub API errors."""
+    github_message = ""
+
+    try:
+        payload = response.json()
+        github_message = str(payload.get("message") or "")
+    except ValueError:
+        github_message = response.text.strip()[:300]
+
+    rate_remaining = response.headers.get("X-RateLimit-Remaining")
+    rate_reset = response.headers.get("X-RateLimit-Reset")
+
+    if response.status_code == 403 and rate_remaining == "0":
+        detail = (
+            "GitHub API rate limit exceeded. Add GITHUB_API_TOKEN to backend/.env "
+            "or try again later."
+        )
+        if rate_reset:
+            detail += f" Rate limit reset timestamp: {rate_reset}."
+    elif response.status_code == 403:
+        detail = (
+            "GitHub API access denied. Check repository access and GITHUB_API_TOKEN."
+        )
+    elif response.status_code == 404:
+        detail = "GitHub repository not found or not accessible."
+    else:
+        detail = fallback_detail
+
+    if github_message and github_message.lower() not in detail.lower():
+        detail = f"{detail} GitHub message: {github_message}"
+
+    raise HTTPException(status_code=response.status_code, detail=detail)
+
+
 async def fetch_repository_info(repo_url: str) -> dict:
     owner, repository = parse_github_repo_url(repo_url)
 
@@ -70,16 +105,10 @@ async def fetch_repository_info(repo_url: str) -> dict:
             try:
                 response = await client.get(url, headers=headers)
 
-                if response.status_code == 404:
-                    raise HTTPException(
-                        status_code=404,
-                        detail="GitHub repository not found",
-                    )
-
-                if response.status_code == 403:
-                    raise HTTPException(
-                        status_code=403,
-                        detail="GitHub API rate limit or access denied",
+                if response.status_code in {403, 404}:
+                    raise_github_api_error(
+                        response=response,
+                        fallback_detail="Unable to fetch repository info from GitHub",
                     )
 
                 response.raise_for_status()
@@ -117,16 +146,10 @@ async def fetch_repository_tree(
     async with httpx.AsyncClient(timeout=timeout) as client:
         response = await client.get(url, headers=headers)
 
-    if response.status_code == 404:
-        raise HTTPException(
-            status_code=404,
-            detail="GitHub repository tree not found",
-        )
-
-    if response.status_code == 403:
-        raise HTTPException(
-            status_code=403,
-            detail="GitHub API rate limit or access denied",
+    if response.status_code in {403, 404}:
+        raise_github_api_error(
+            response=response,
+            fallback_detail="Unable to fetch repository tree from GitHub",
         )
 
     response.raise_for_status()
@@ -169,9 +192,9 @@ async def fetch_repository_file_text(
         return None
 
     if response.status_code == 403:
-        raise HTTPException(
-            status_code=403,
-            detail="GitHub API rate limit or access denied",
+        raise_github_api_error(
+            response=response,
+            fallback_detail="Unable to fetch repository file from GitHub",
         )
 
     response.raise_for_status()

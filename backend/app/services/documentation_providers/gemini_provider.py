@@ -10,6 +10,7 @@ async def generate_gemini_documentation(
     api_key: str,
     model: str,
     max_output_tokens: int,
+    response_mime_type: str | None = None,
 ) -> str:
     url = f"{GEMINI_API_URL}/{model}:generateContent"
     params = {"key": api_key}
@@ -25,9 +26,12 @@ async def generate_gemini_documentation(
         ],
         "generationConfig": {
             "maxOutputTokens": max_output_tokens,
-            "temperature": 0.3,
+            "temperature": 0.2,
         },
     }
+
+    if response_mime_type:
+        payload["generationConfig"]["responseMimeType"] = response_mime_type
 
     timeout = httpx.Timeout(25.0, connect=8.0)
 
@@ -46,6 +50,16 @@ async def generate_gemini_documentation(
     candidates = data.get("candidates") or []
 
     for candidate in candidates:
+        finish_reason = candidate.get("finishReason")
+        if finish_reason == "MAX_TOKENS":
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    "Gemini response was cut off by maxOutputTokens. "
+                    "Increase DOCUMENTATION_MAX_OUTPUT_TOKENS and try again."
+                ),
+            )
+
         content = candidate.get("content") or {}
         parts = content.get("parts") or []
         text_parts = [

@@ -1,10 +1,26 @@
+import json
 from datetime import datetime, timezone
+from typing import Any
 
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.auth import get_password_hash, hash_refresh_token, verify_password
+
+
+def serialize_json_field(value: Any) -> str | None:
+    if value is None:
+        return None
+
+    return json.dumps(value, ensure_ascii=False)
+
+
+def deserialize_json_field(value: str | None) -> Any:
+    if not value:
+        return None
+
+    return json.loads(value)
 
 
 def get_user_by_id(db: Session, user_id: int):
@@ -296,6 +312,8 @@ def create_documentation_version(
     repository: models.Repository,
     app_version: str,
     documentation: str,
+    business_summary: dict[str, Any] | None = None,
+    quality_assessment: dict[str, Any] | None = None,
     provider: str | None = None,
     source_updated_at: str | None = None,
 ):
@@ -328,6 +346,8 @@ def create_documentation_version(
         app_version=normalized_app_version,
         revision_number=revision_number,
         documentation=documentation,
+        business_summary=serialize_json_field(business_summary),
+        quality_assessment=serialize_json_field(quality_assessment),
         provider=provider,
         source_updated_at=source_updated_at,
         is_latest_for_app_version=True,
@@ -345,6 +365,8 @@ def save_repository_documentation(
     repository: models.Repository,
     documentation: str,
     app_version: str,
+    business_summary: dict[str, Any] | None = None,
+    quality_assessment: dict[str, Any] | None = None,
     provider: str | None = None,
     source_updated_at: str | None = None,
 ):
@@ -353,6 +375,8 @@ def save_repository_documentation(
         repository=repository,
         app_version=app_version,
         documentation=documentation,
+        business_summary=business_summary,
+        quality_assessment=quality_assessment,
         provider=provider,
         source_updated_at=source_updated_at,
     )
