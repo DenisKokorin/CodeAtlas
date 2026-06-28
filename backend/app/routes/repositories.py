@@ -58,6 +58,30 @@ def build_quality_assessment_response(
     }
 
 
+def build_critical_parts_response(
+    repository: models.Repository,
+    documentation_version: models.DocumentationVersion,
+):
+    critical_parts = crud.deserialize_json_field(
+        documentation_version.critical_parts,
+    )
+
+    if critical_parts is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Critical parts have not been generated yet",
+        )
+
+    return {
+        "repository_id": repository.id,
+        "documentation_version_id": documentation_version.id,
+        "app_version": documentation_version.app_version,
+        "revision_number": documentation_version.revision_number,
+        "display_name": documentation_version.display_name,
+        "critical_parts": critical_parts,
+    }
+
+
 def get_owned_repository_or_404(
     db: Session,
     repository_id: int,
@@ -316,6 +340,7 @@ async def generate_repository_documentation(
         app_version=payload.app_version,
         business_summary=result.get("business_summary"),
         quality_assessment=result.get("quality_assessment"),
+        critical_parts=result.get("critical_parts"),
         provider=result["provider"],
         source_updated_at=result["source_updated_at"],
     )
@@ -496,6 +521,58 @@ def read_documentation_version_quality_assessment(
     )
 
     return build_quality_assessment_response(
+        repository=repository,
+        documentation_version=documentation_version,
+    )
+
+
+@router.get(
+    "/{repository_id}/critical-parts",
+    response_model=schemas.CriticalPartsResponse,
+)
+def read_latest_critical_parts(
+    repository_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    repository = get_owned_repository_or_404(
+        db=db,
+        repository_id=repository_id,
+        owner_id=current_user.id,
+    )
+    documentation_version = get_latest_documentation_version_or_404(
+        db=db,
+        repository=repository,
+    )
+
+    return build_critical_parts_response(
+        repository=repository,
+        documentation_version=documentation_version,
+    )
+
+
+@router.get(
+    "/{repository_id}/documentation/versions/{version_id}/critical-parts",
+    response_model=schemas.CriticalPartsResponse,
+)
+def read_documentation_version_critical_parts(
+    repository_id: int,
+    version_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    repository = get_owned_repository_or_404(
+        db=db,
+        repository_id=repository_id,
+        owner_id=current_user.id,
+    )
+    documentation_version = get_documentation_version_or_404(
+        db=db,
+        repository=repository,
+        version_id=version_id,
+    )
+
+    return build_critical_parts_response(
         repository=repository,
         documentation_version=documentation_version,
     )

@@ -314,6 +314,7 @@ def create_documentation_version(
     documentation: str,
     business_summary: dict[str, Any] | None = None,
     quality_assessment: dict[str, Any] | None = None,
+    critical_parts: dict[str, Any] | None = None,
     provider: str | None = None,
     source_updated_at: str | None = None,
 ):
@@ -348,6 +349,7 @@ def create_documentation_version(
         documentation=documentation,
         business_summary=serialize_json_field(business_summary),
         quality_assessment=serialize_json_field(quality_assessment),
+        critical_parts=serialize_json_field(critical_parts),
         provider=provider,
         source_updated_at=source_updated_at,
         is_latest_for_app_version=True,
@@ -367,6 +369,7 @@ def save_repository_documentation(
     app_version: str,
     business_summary: dict[str, Any] | None = None,
     quality_assessment: dict[str, Any] | None = None,
+    critical_parts: dict[str, Any] | None = None,
     provider: str | None = None,
     source_updated_at: str | None = None,
 ):
@@ -377,6 +380,7 @@ def save_repository_documentation(
         documentation=documentation,
         business_summary=business_summary,
         quality_assessment=quality_assessment,
+        critical_parts=critical_parts,
         provider=provider,
         source_updated_at=source_updated_at,
     )

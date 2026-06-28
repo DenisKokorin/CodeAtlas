@@ -9,7 +9,8 @@ CodeAtlas — backend API для анализа GitHub-репозиториев 
 * генерировать Markdown-документацию;
 * хранить документацию по версиям приложения и ревизиям;
 * получать Business Summary для руководителя;
-* получать общую оценку проекта по инфраструктурным признакам;
+* получать описание наиболее критичных частей проекта (Critical Parts);
+* получать общую оценку проекта по инфраструктурным признакам (Quality Assessment);
 * экспортировать документацию в разных форматах;
 * работать с API через Swagger UI;
 * использовать JWT-авторизацию для защиты основных эндпоинтов.
@@ -199,7 +200,7 @@ GET /repositories/{repository_id}/documentation/versions
 GET /repositories/{repository_id}/documentation/versions/{version_id}
 ```
 
-## Business Summary и оценка проекта
+## Business Summary, Critical Parts и оценка проекта
 
 При генерации документации backend получает от LLM не один общий Markdown-текст, а структурированный результат:
 
@@ -207,9 +208,10 @@ GET /repositories/{repository_id}/documentation/versions/{version_id}
 documentation_markdown
 business_summary
 quality_assessment
+critical_parts
 ```
 
-`documentation_markdown` хранится и используется как основная техническая документация. `business_summary` и `quality_assessment` сохраняются отдельно для конкретной версии документации.
+`documentation_markdown` хранится и используется как основная техническая документация. `business_summary`, `quality_assessment` и `critical_parts` сохраняются отдельно для конкретной версии документации.
 
 Business Summary можно получить через endpoint:
 
@@ -218,6 +220,14 @@ GET /repositories/{repository_id}/business-summary
 ```
 
 Этот endpoint возвращает краткое описание проекта для руководителя или заказчика: что делает система, кому она полезна и какую ценность даёт.
+
+Critical Parts можно получить через endpoint:
+
+```text
+GET /repositories/{repository_id}/critical-parts
+```
+
+Этот endpoint возвращает описание наиболее критичных частей проекта — какие модули наиболее важны, почему, и какие файлы к ним относятся. В mock-режиме анализ выполняется автоматически по структуре репозитория. При использовании Gemini анализ выполняет LLM на основе предоставленного контекста.
 
 Общую оценку проекта можно получить через endpoint:
 
@@ -255,11 +265,12 @@ has_clear_structure
 ```text
 GET /repositories/{repository_id}/documentation/versions/{version_id}/business-summary
 GET /repositories/{repository_id}/documentation/versions/{version_id}/quality-assessment
+GET /repositories/{repository_id}/documentation/versions/{version_id}/critical-parts
 ```
 
-По умолчанию endpoints без `version_id` возвращают Business Summary и оценку для актуальной версии документации.
+По умолчанию endpoints без `version_id` возвращают Business Summary, Critical Parts и оценку для актуальной версии документации.
 
-Мультиформатный экспорт применяется только к основной Markdown-документации. Business Summary и Quality Assessment не добавляются в экспортируемые файлы автоматически и отдаются отдельными JSON endpoints.
+Мультиформатный экспорт применяется только к основной Markdown-документации. Business Summary, Critical Parts и Quality Assessment не добавляются в экспортируемые файлы автоматически и отдаются отдельными JSON endpoints.
 
 ## Мультиформатный экспорт
 
@@ -358,7 +369,7 @@ copy .env.example .env
 
 ## Примечание по генерации через Gemini JSON
 
-Для генерации документации, Business Summary и Quality Assessment backend ожидает от Gemini структурированный JSON.
+Для генерации документации, Business Summary, Critical Parts и Quality Assessment backend ожидает от Gemini структурированный JSON.
 Если ответ Gemini был обрезан, увеличьте значение переменной окружения:
 
 ```env
