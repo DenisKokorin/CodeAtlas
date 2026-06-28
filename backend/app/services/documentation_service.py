@@ -1,4 +1,7 @@
+import json
 import os
+import re
+from typing import Any
 
 from fastapi import HTTPException
 
@@ -13,6 +16,11 @@ from app.services.github_service import (
     fetch_repository_file_text,
     fetch_repository_info,
     fetch_repository_tree,
+)
+from app.services.project_quality_service import (
+    build_default_quality_assessment,
+    build_project_quality_facts,
+    normalize_quality_assessment,
 )
 
 
@@ -81,20 +89,52 @@ def trim_text(value: str, max_chars: int) -> str:
     return value[:max_chars] + "\n\n[Текст обрезан из-за ограничения размера.]"
 
 
-def build_prompt(context_text: str) -> str:
+def build_prompt(context_text: str, quality_facts: dict[str, Any]) -> str:
+    quality_facts_json = json.dumps(quality_facts, ensure_ascii=False, indent=2)
+
     return (
-        "Сгенерируй Markdown-документацию для проекта по данным GitHub-репозитория.\n"
+        "Сгенерируй результат анализа GitHub-репозитория.\n"
+        "Ответ должен быть СТРОГО валидным JSON без markdown code fence, "
+        "без пояснений до JSON и после JSON. Не оборачивай ответ в ```json.\n"
         "Не выдумывай факты, если данных нет. Если информации мало, честно "
-        "напиши, что часть выводов приблизительная.\n"
-        "Учитывай метаданные репозитория, структуру файлов и содержимое важных файлов.\n\n"
-        "Обязательно включи разделы:\n"
-        "- Название проекта;\n"
-        "- Краткое описание;\n"
-        "- Основные технологии;\n"
-        "- Структура проекта;\n"
-        "- Как запустить проект;\n"
-        "- Основные возможности;\n"
-        "- Что можно улучшить в документации.\n\n"
+        "напиши, что часть выводов приблизительная.\n\n"
+        "JSON должен иметь ровно такие верхнеуровневые поля:\n"
+        "{\n"
+        '  "documentation_markdown_lines": ["# Название проекта", "", "## Краткое описание", "..."],\n'
+        '  "business_summary": {\n'
+        '    "title": "Business Summary",\n'
+        '    "text": "Краткое описание системы для руководителя",\n'
+        '    "target_audience": ["..."],\n'
+        '    "business_value": ["..."]\n'
+        "  },\n"
+        '  "quality_assessment": {\n'
+        '    "summary": "Человекочитаемая общая оценка проекта",\n'
+        '    "strengths": ["..."],\n'
+        '    "risks": ["..."],\n'
+        '    "recommendations": ["..."]\n'
+        "  }\n"
+        "}\n\n"
+        "Требования к documentation_markdown_lines:\n"
+        "- это массив строк, из которого backend соберёт Markdown через перенос строки;\n"
+        "- НЕ возвращай документацию одним большим многострочным значением documentation_markdown;\n"
+        "- каждая строка Markdown должна быть отдельным элементом массива;\n"
+        "- это должна быть обычная техническая Markdown-документация;\n"
+        "- не включай туда Business Summary;\n"
+        "- не включай туда Project Quality Assessment;\n"
+        "- обязательно включи разделы: Название проекта, Краткое описание, "
+        "Основные технологии, Структура проекта, Как запустить проект, "
+        "Основные возможности, Что можно улучшить в документации;\n"
+        "- пиши достаточно подробно, но компактно, чтобы весь JSON полностью поместился в ответ.\n\n"
+        "Требования к business_summary:\n"
+        "- пиши простым языком для руководителя или заказчика;\n"
+        "- объясни, что делает система, кому она полезна и какую ценность даёт;\n"
+        "- не перегружай текст техническими деталями.\n\n"
+        "Требования к quality_assessment:\n"
+        "- основывайся на переданных фактах о репозитории;\n"
+        "- не меняй score и criteria: их считает backend отдельно;\n"
+        "- дай понятное summary, strengths, risks и recommendations.\n\n"
+        "Факты для оценки проекта, собранные backend-ом:\n"
+        f"{quality_facts_json}\n\n"
         f"Контекст проекта:\n{context_text}"
     )
 
@@ -276,6 +316,7 @@ async def build_documentation_context(repository: models.Repository) -> dict:
         "github_context": github_context,
     }
 
+    quality_facts = build_project_quality_facts(github_context)
     context_text = trim_text(format_context_for_prompt(context), max_input_chars)
 
     return {
@@ -283,10 +324,243 @@ async def build_documentation_context(repository: models.Repository) -> dict:
         "github": context["github"],
         "github_error": context["github_error"],
         "github_context": context["github_context"],
+        "quality_facts": quality_facts,
         "prompt_context": context_text,
         "source_updated_at": (
             context["github"].get("updated_at") if context["github"] else None
         ),
+    }
+
+
+def build_mock_business_summary(context: dict) -> dict[str, Any]:
+    repository = context["repository"]
+    github = context.get("github")
+    project_name = github.get("full_name") if github else repository["name"]
+    description = (
+        repository.get("description")
+        or (github.get("description") if github else None)
+        or "Описание репозитория пока не заполнено."
+    )
+
+    return {
+        "title": "Business Summary",
+        "text": (
+            f"{project_name} — проект, который был проанализирован CodeAtlas. "
+            f"Система помогает быстро получить техническую документацию, "
+            f"краткое описание для руководителя и общую оценку состояния репозитория. "
+            f"Краткое описание проекта: {description}"
+        ),
+        "target_audience": [
+            "руководители проектов",
+            "разработчики",
+            "новые участники команды",
+        ],
+        "business_value": [
+            "ускоряет знакомство с проектом",
+            "снижает время на ручное описание репозитория",
+            "помогает быстрее оценить состояние проекта",
+        ],
+    }
+
+
+def build_mock_structured_result(context: dict) -> dict[str, Any]:
+    quality_facts = context["quality_facts"]
+
+    return {
+        "documentation_markdown": generate_mock_documentation(context),
+        "business_summary": build_mock_business_summary(context),
+        "quality_assessment": build_default_quality_assessment(quality_facts),
+    }
+
+
+def get_github_context_error(context: dict) -> str | None:
+    if context.get("github_error"):
+        return str(context["github_error"])
+
+    github_context = context.get("github_context") or {}
+
+    if github_context.get("tree_error"):
+        return str(github_context["tree_error"])
+
+    if not github_context.get("tree"):
+        return "GitHub repository tree is empty or unavailable"
+
+    return None
+
+
+def ensure_github_context_available_for_gemini(context: dict) -> None:
+    github_error = get_github_context_error(context)
+
+    if github_error is None:
+        return
+
+    raise HTTPException(
+        status_code=502,
+        detail=(
+            "GitHub repository data is unavailable. Documentation generation "
+            "was stopped before calling Gemini. Reason: "
+            f"{github_error}. Check repository URL, add GITHUB_API_TOKEN to "
+            "backend/.env, or try again later."
+        ),
+    )
+
+
+def is_structured_response_error(exc: HTTPException) -> bool:
+    detail = str(exc.detail)
+    return (
+        "structured documentation response" in detail.lower()
+        or "documentation_markdown" in detail
+        or "business_summary" in detail
+    )
+
+
+def strip_json_code_fence(raw_text: str) -> str:
+    text = raw_text.strip()
+
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"\s*```$", "", text)
+        text = text.strip()
+
+    first_brace = text.find("{")
+    last_brace = text.rfind("}")
+
+    if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
+        return text[first_brace : last_brace + 1]
+
+    return text
+
+
+def repair_common_json_text_issues(json_text: str) -> str:
+    """Repair common LLM JSON issues inside string values.
+
+    Gemini can still return almost-valid JSON where Markdown lines contain
+    raw control characters or Windows paths like .\\venv\\Scripts\\activate.
+    Those backslashes are invalid in strict JSON if they are not escaped.
+    This function keeps JSON structure unchanged and only sanitizes characters
+    while the scanner is inside a JSON string.
+    """
+
+    result: list[str] = []
+    in_string = False
+    i = 0
+    valid_escape_chars = {'"', "\\", "/", "b", "f", "n", "r", "t", "u"}
+
+    while i < len(json_text):
+        char = json_text[i]
+
+        if not in_string:
+            result.append(char)
+            if char == '"':
+                in_string = True
+            i += 1
+            continue
+
+        if char == '"':
+            result.append(char)
+            in_string = False
+            i += 1
+            continue
+
+        if char == "\\":
+            next_char = json_text[i + 1] if i + 1 < len(json_text) else ""
+            if next_char in valid_escape_chars:
+                result.append(char)
+                if next_char:
+                    result.append(next_char)
+                    i += 2
+                else:
+                    i += 1
+            else:
+                result.append("\\\\")
+                i += 1
+            continue
+
+        if char == "\n":
+            result.append("\\n")
+        elif char == "\r":
+            result.append("\\r")
+        elif char == "\t":
+            result.append("\\t")
+        else:
+            result.append(char)
+
+        i += 1
+
+    return "".join(result)
+
+
+def load_structured_json(raw_text: str) -> dict[str, Any]:
+    json_text = strip_json_code_fence(raw_text)
+
+    try:
+        payload = json.loads(json_text)
+    except json.JSONDecodeError:
+        repaired_json_text = repair_common_json_text_issues(json_text)
+        try:
+            payload = json.loads(repaired_json_text)
+        except json.JSONDecodeError as exc:
+            print(
+                "Failed to parse structured documentation response. "
+                f"Gemini raw response preview: {raw_text[:1200]}"
+            )
+            print(
+                "Failed to parse structured documentation response. "
+                f"Repaired response preview: {repaired_json_text[:1200]}"
+            )
+            raise HTTPException(
+                status_code=502,
+                detail="Failed to parse structured documentation response. Try again.",
+            ) from exc
+
+    if not isinstance(payload, dict):
+        raise HTTPException(
+            status_code=502,
+            detail="Structured documentation response must be a JSON object. Try again.",
+        )
+
+    return payload
+
+
+def parse_structured_documentation_response(
+    raw_text: str,
+    quality_facts: dict[str, Any],
+) -> dict[str, Any]:
+    payload = load_structured_json(raw_text)
+
+    documentation_lines = payload.get("documentation_markdown_lines")
+    documentation = payload.get("documentation_markdown")
+
+    if isinstance(documentation_lines, list):
+        documentation = "\n".join(
+            str(line) for line in documentation_lines
+        )
+
+    if not isinstance(documentation, str) or not documentation.strip():
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "Structured documentation response does not contain "
+                "documentation_markdown_lines. Try again."
+            ),
+        )
+
+    business_summary = payload.get("business_summary")
+    if not isinstance(business_summary, dict):
+        raise HTTPException(
+            status_code=502,
+            detail="Structured documentation response does not contain business_summary. Try again.",
+        )
+
+    quality_assessment = normalize_quality_assessment(
+        llm_assessment=payload.get("quality_assessment"),
+        quality_facts=quality_facts,
+    )
+
+    return {
+        "documentation_markdown": documentation.strip(),
+        "business_summary": business_summary,
+        "quality_assessment": quality_assessment,
     }
 
 
@@ -295,14 +569,17 @@ async def generate_repository_documentation(repository: models.Repository) -> di
     provider_mode = os.getenv("DOCUMENTATION_PROVIDER", "auto").lower()
     api_key = os.getenv("GEMINI_API_KEY", "")
     model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
-    max_output_tokens = get_int_env("DOCUMENTATION_MAX_OUTPUT_TOKENS", 1200)
+    max_output_tokens = get_int_env("DOCUMENTATION_MAX_OUTPUT_TOKENS", 8192)
 
     if provider_mode not in {"auto", "mock", "gemini"}:
         provider_mode = "auto"
 
     if provider_mode == "mock":
+        structured_result = build_mock_structured_result(context)
         return {
-            "documentation": generate_mock_documentation(context),
+            "documentation": structured_result["documentation_markdown"],
+            "business_summary": structured_result["business_summary"],
+            "quality_assessment": structured_result["quality_assessment"],
             "provider": "mock",
             "source_updated_at": context["source_updated_at"],
         }
@@ -314,42 +591,155 @@ async def generate_repository_documentation(repository: models.Repository) -> di
                 detail="Gemini API key is not configured.",
             )
 
-        documentation = await generate_gemini_documentation(
-            prompt=build_prompt(context["prompt_context"]),
+        ensure_github_context_available_for_gemini(context)
+
+        raw_documentation = await generate_gemini_documentation(
+            prompt=build_prompt(context["prompt_context"], context["quality_facts"]),
             api_key=api_key,
             model=model,
             max_output_tokens=max_output_tokens,
+            response_mime_type="application/json",
+        )
+        structured_result = parse_structured_documentation_response(
+            raw_text=raw_documentation,
+            quality_facts=context["quality_facts"],
         )
 
         return {
-            "documentation": documentation,
+            "documentation": structured_result["documentation_markdown"],
+            "business_summary": structured_result["business_summary"],
+            "quality_assessment": structured_result["quality_assessment"],
             "provider": "gemini",
             "source_updated_at": context["source_updated_at"],
         }
 
     if api_key:
+        ensure_github_context_available_for_gemini(context)
+
         try:
-            documentation = await generate_gemini_documentation(
-                prompt=build_prompt(context["prompt_context"]),
+            raw_documentation = await generate_gemini_documentation(
+                prompt=build_prompt(context["prompt_context"], context["quality_facts"]),
                 api_key=api_key,
                 model=model,
                 max_output_tokens=max_output_tokens,
+                response_mime_type="application/json",
+            )
+            structured_result = parse_structured_documentation_response(
+                raw_text=raw_documentation,
+                quality_facts=context["quality_facts"],
             )
 
             return {
-                "documentation": documentation,
+                "documentation": structured_result["documentation_markdown"],
+                "business_summary": structured_result["business_summary"],
+                "quality_assessment": structured_result["quality_assessment"],
                 "provider": "gemini",
                 "source_updated_at": context["source_updated_at"],
             }
-        except HTTPException:
+        except HTTPException as exc:
+            if is_structured_response_error(exc):
+                raise
+
+            structured_result = build_mock_structured_result(context)
             return {
-                "documentation": generate_mock_documentation(context),
+                "documentation": structured_result["documentation_markdown"],
+                "business_summary": structured_result["business_summary"],
+                "quality_assessment": structured_result["quality_assessment"],
                 "provider": "mock_fallback",
                 "source_updated_at": context["source_updated_at"],
             }
 
+    structured_result = build_mock_structured_result(context)
     return {
-        "documentation": generate_mock_documentation(context),
+        "documentation": structured_result["documentation_markdown"],
+        "business_summary": structured_result["business_summary"],
+        "quality_assessment": structured_result["quality_assessment"],
         "provider": "mock",
         "source_updated_at": context["source_updated_at"],
     }
+
+async def generate_gemini_raw_debug_response(repository: models.Repository) -> dict[str, Any]:
+    """Return raw Gemini response for temporary debugging.
+
+    This function intentionally does not save anything to the database.
+    It uses the same GitHub context, quality facts, prompt and Gemini settings
+    as normal documentation generation, then returns the raw model output so
+    invalid JSON issues can be inspected from Swagger.
+    """
+
+    context = await build_documentation_context(repository)
+    api_key = os.getenv("GEMINI_API_KEY", "")
+    model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
+    max_output_tokens = get_int_env("DOCUMENTATION_MAX_OUTPUT_TOKENS", 8192)
+
+    if not api_key:
+        raise HTTPException(
+            status_code=400,
+            detail="Gemini API key is not configured.",
+        )
+
+    ensure_github_context_available_for_gemini(context)
+
+    prompt = build_prompt(context["prompt_context"], context["quality_facts"])
+    raw_response = await generate_gemini_documentation(
+        prompt=prompt,
+        api_key=api_key,
+        model=model,
+        max_output_tokens=max_output_tokens,
+        response_mime_type="application/json",
+    )
+
+    strict_json_valid = False
+    repaired_json_valid = False
+    structured_response_valid = False
+    parse_error = None
+
+    json_text = strip_json_code_fence(raw_response)
+
+    try:
+        json.loads(json_text)
+        strict_json_valid = True
+        repaired_json_valid = True
+    except json.JSONDecodeError as strict_exc:
+        parse_error = str(strict_exc)
+        repaired_json_text = repair_common_json_text_issues(json_text)
+
+        try:
+            json.loads(repaired_json_text)
+            repaired_json_valid = True
+        except json.JSONDecodeError as repaired_exc:
+            parse_error = str(repaired_exc)
+
+    try:
+        parse_structured_documentation_response(
+            raw_text=raw_response,
+            quality_facts=context["quality_facts"],
+        )
+        structured_response_valid = True
+        parse_error = None
+    except HTTPException as exc:
+        parse_error = str(exc.detail)
+
+    github_context = context.get("github_context") or {}
+    files = github_context.get("files") or []
+
+    return {
+        "repository_id": repository.id,
+        "repository_name": repository.name,
+        "repo_url": repository.repo_url,
+        "provider": "gemini",
+        "model": model,
+        "max_output_tokens": max_output_tokens,
+        "raw_response_length": len(raw_response),
+        "strict_json_valid": strict_json_valid,
+        "repaired_json_valid": repaired_json_valid,
+        "structured_response_valid": structured_response_valid,
+        "parse_error": parse_error,
+        "github": context.get("github"),
+        "github_error": context.get("github_error"),
+        "github_tree_items_count": len(github_context.get("tree") or []),
+        "github_files_used": [file.get("path") for file in files],
+        "quality_facts": context["quality_facts"],
+        "raw_response": raw_response,
+    }
+

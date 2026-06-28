@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -195,6 +195,24 @@ class RepositoryDocumentationResponse(BaseModel):
     app_version: Optional[str] = None
     revision_number: Optional[int] = None
     display_name: Optional[str] = None
+
+
+class BusinessSummaryResponse(BaseModel):
+    repository_id: int
+    documentation_version_id: int
+    app_version: str
+    revision_number: int
+    display_name: str
+    business_summary: dict[str, Any]
+
+
+class QualityAssessmentResponse(BaseModel):
+    repository_id: int
+    documentation_version_id: int
+    app_version: str
+    revision_number: int
+    display_name: str
+    quality_assessment: dict[str, Any]
 
 
 class GitHubRepositoryAnalyzeRequest(BaseModel):

@@ -10,6 +10,109 @@ from app.services.github_service import fetch_repository_info
 router = APIRouter(prefix="/repositories", tags=["Repositories"])
 
 
+def build_business_summary_response(
+    repository: models.Repository,
+    documentation_version: models.DocumentationVersion,
+):
+    business_summary = crud.deserialize_json_field(
+        documentation_version.business_summary,
+    )
+
+    if business_summary is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Business summary has not been generated yet",
+        )
+
+    return {
+        "repository_id": repository.id,
+        "documentation_version_id": documentation_version.id,
+        "app_version": documentation_version.app_version,
+        "revision_number": documentation_version.revision_number,
+        "display_name": documentation_version.display_name,
+        "business_summary": business_summary,
+    }
+
+
+def build_quality_assessment_response(
+    repository: models.Repository,
+    documentation_version: models.DocumentationVersion,
+):
+    quality_assessment = crud.deserialize_json_field(
+        documentation_version.quality_assessment,
+    )
+
+    if quality_assessment is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Quality assessment has not been generated yet",
+        )
+
+    return {
+        "repository_id": repository.id,
+        "documentation_version_id": documentation_version.id,
+        "app_version": documentation_version.app_version,
+        "revision_number": documentation_version.revision_number,
+        "display_name": documentation_version.display_name,
+        "quality_assessment": quality_assessment,
+    }
+
+
+def get_owned_repository_or_404(
+    db: Session,
+    repository_id: int,
+    owner_id: int,
+):
+    repository = crud.get_repository_by_id(
+        db=db,
+        repository_id=repository_id,
+        owner_id=owner_id,
+    )
+
+    if repository is None:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    return repository
+
+
+def get_latest_documentation_version_or_404(
+    db: Session,
+    repository: models.Repository,
+):
+    documentation_version = crud.get_latest_documentation_version(
+        db=db,
+        repository_id=repository.id,
+    )
+
+    if documentation_version is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Documentation has not been generated yet",
+        )
+
+    return documentation_version
+
+
+def get_documentation_version_or_404(
+    db: Session,
+    repository: models.Repository,
+    version_id: int,
+):
+    documentation_version = crud.get_documentation_version_by_id(
+        db=db,
+        repository_id=repository.id,
+        version_id=version_id,
+    )
+
+    if documentation_version is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Documentation version not found",
+        )
+
+    return documentation_version
+
+
 @router.post(
     "/analyze",
     response_model=schemas.GitHubRepositoryInfo,
@@ -155,6 +258,29 @@ async def read_repository_github_info(
 
 
 @router.post(
+    "/{repository_id}/debug/gemini-raw-response",
+)
+async def debug_gemini_raw_response(
+    repository_id: int,
+    payload: schemas.DocumentationGenerationRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    repository = get_owned_repository_or_404(
+        db=db,
+        repository_id=repository_id,
+        owner_id=current_user.id,
+    )
+
+    debug_result = await documentation_service.generate_gemini_raw_debug_response(
+        repository=repository,
+    )
+    debug_result["app_version"] = payload.app_version
+
+    return debug_result
+
+
+@router.post(
     "/{repository_id}/generate-documentation",
     response_model=schemas.RepositoryDocumentationResponse,
 )
@@ -188,6 +314,8 @@ async def generate_repository_documentation(
         repository=repository,
         documentation=result["documentation"],
         app_version=payload.app_version,
+        business_summary=result.get("business_summary"),
+        quality_assessment=result.get("quality_assessment"),
         provider=result["provider"],
         source_updated_at=result["source_updated_at"],
     )
@@ -267,6 +395,110 @@ def read_documentation_version(
         )
 
     return documentation_version
+
+
+@router.get(
+    "/{repository_id}/business-summary",
+    response_model=schemas.BusinessSummaryResponse,
+)
+def read_latest_business_summary(
+    repository_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    repository = get_owned_repository_or_404(
+        db=db,
+        repository_id=repository_id,
+        owner_id=current_user.id,
+    )
+    documentation_version = get_latest_documentation_version_or_404(
+        db=db,
+        repository=repository,
+    )
+
+    return build_business_summary_response(
+        repository=repository,
+        documentation_version=documentation_version,
+    )
+
+
+@router.get(
+    "/{repository_id}/quality-assessment",
+    response_model=schemas.QualityAssessmentResponse,
+)
+def read_latest_quality_assessment(
+    repository_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    repository = get_owned_repository_or_404(
+        db=db,
+        repository_id=repository_id,
+        owner_id=current_user.id,
+    )
+    documentation_version = get_latest_documentation_version_or_404(
+        db=db,
+        repository=repository,
+    )
+
+    return build_quality_assessment_response(
+        repository=repository,
+        documentation_version=documentation_version,
+    )
+
+
+@router.get(
+    "/{repository_id}/documentation/versions/{version_id}/business-summary",
+    response_model=schemas.BusinessSummaryResponse,
+)
+def read_documentation_version_business_summary(
+    repository_id: int,
+    version_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    repository = get_owned_repository_or_404(
+        db=db,
+        repository_id=repository_id,
+        owner_id=current_user.id,
+    )
+    documentation_version = get_documentation_version_or_404(
+        db=db,
+        repository=repository,
+        version_id=version_id,
+    )
+
+    return build_business_summary_response(
+        repository=repository,
+        documentation_version=documentation_version,
+    )
+
+
+@router.get(
+    "/{repository_id}/documentation/versions/{version_id}/quality-assessment",
+    response_model=schemas.QualityAssessmentResponse,
+)
+def read_documentation_version_quality_assessment(
+    repository_id: int,
+    version_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    repository = get_owned_repository_or_404(
+        db=db,
+        repository_id=repository_id,
+        owner_id=current_user.id,
+    )
+    documentation_version = get_documentation_version_or_404(
+        db=db,
+        repository=repository,
+        version_id=version_id,
+    )
+
+    return build_quality_assessment_response(
+        repository=repository,
+        documentation_version=documentation_version,
+    )
 
 
 @router.get(
