@@ -385,6 +385,48 @@ def _classify_directory(dir_name: str, files: list[str], all_paths: list[str]) -
     return None  # Skip small / unknown directories
 
 
+def build_critical_parts_facts(github_context: dict[str, Any]) -> dict[str, Any]:
+    """Build structured facts about the repository for the LLM prompt.
+
+    Returns a dict with detected entry points, directories, config files
+    and their file counts so Gemini can use them instead of guessing.
+    """
+    paths = _tree_paths(github_context)
+    all_paths = [p for p in paths if not _has_ignored_prefix(p)]
+
+    dir_files = _map_files_to_directories(all_paths)
+    directories = []
+    for dir_name in sorted(dir_files.keys()):
+        files = dir_files[dir_name]
+        directories.append({
+            "name": dir_name,
+            "file_count": len(files),
+            "files": files[:20],
+        })
+
+    return {
+        "language": _detect_language_from_files(all_paths),
+        "total_files": len(all_paths),
+        "entry_points": _find_main_entry_files(all_paths),
+        "config_files": _find_config_files(all_paths),
+        "directories": directories,
+        "readme_files": sorted(
+            p for p in all_paths
+            if _filename(p) in {"readme.md", "readme.txt", "readme.rst"}
+        ),
+        "ci_cd_files": sorted(
+            p for p in all_paths
+            if p.lower().startswith(".github/workflows/")
+            or _filename(p) in {".gitlab-ci.yml", "azure-pipelines.yml", "jenkinsfile"}
+        ),
+        "docker_files": sorted(
+            p for p in all_paths
+            if _filename(p).startswith("docker")
+            or _filename(p) in {"docker-compose.yml", "docker-compose.yaml"}
+        ),
+    }
+
+
 def build_mock_critical_parts(context: dict) -> dict[str, Any]:
     """Build mock critical parts for any repository based on its actual structure."""
     repository = context["repository"]
