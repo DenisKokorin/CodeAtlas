@@ -17,6 +17,10 @@ from app.services.github_service import (
     fetch_repository_info,
     fetch_repository_tree,
 )
+from app.services.project_critical_parts_service import (
+    build_critical_parts_facts,
+    build_mock_critical_parts,
+)
 from app.services.project_quality_service import (
     build_default_quality_assessment,
     build_project_quality_facts,
@@ -89,8 +93,17 @@ def trim_text(value: str, max_chars: int) -> str:
     return value[:max_chars] + "\n\n[Текст обрезан из-за ограничения размера.]"
 
 
-def build_prompt(context_text: str, quality_facts: dict[str, Any]) -> str:
+def build_prompt(
+    context_text: str,
+    quality_facts: dict[str, Any],
+    critical_parts_facts: dict[str, Any] | None = None,
+) -> str:
     quality_facts_json = json.dumps(quality_facts, ensure_ascii=False, indent=2)
+    critical_parts_facts_json = json.dumps(
+        critical_parts_facts or {},
+        ensure_ascii=False,
+        indent=2,
+    )
 
     return (
         "Сгенерируй результат анализа GitHub-репозитория.\n"
@@ -112,6 +125,17 @@ def build_prompt(context_text: str, quality_facts: dict[str, Any]) -> str:
         '    "strengths": ["..."],\n'
         '    "risks": ["..."],\n'
         '    "recommendations": ["..."]\n'
+        "  },\n"
+        '  "critical_parts": {\n'
+        '    "title": "Critical Parts",\n'
+        '    "items": [\n'
+        "      {\n"
+        '        "name": "Название критической части",\n'
+        '        "description": "Описание, почему эта часть важна",\n'
+        '        "files": ["путь/к/файлу.py", "путь/к/другому/файлу.js"],\n'
+        '        "why_critical": "Почему эта часть является критической для проекта"\n'
+        "      }\n"
+        "    ]\n"
         "  }\n"
         "}\n\n"
         "Требования к documentation_markdown_lines:\n"
@@ -121,6 +145,7 @@ def build_prompt(context_text: str, quality_facts: dict[str, Any]) -> str:
         "- это должна быть обычная техническая Markdown-документация;\n"
         "- не включай туда Business Summary;\n"
         "- не включай туда Project Quality Assessment;\n"
+        "- не включай туда Critical Parts;\n"
         "- обязательно включи разделы: Название проекта, Краткое описание, "
         "Основные технологии, Структура проекта, Как запустить проект, "
         "Основные возможности, Что можно улучшить в документации;\n"
@@ -133,8 +158,22 @@ def build_prompt(context_text: str, quality_facts: dict[str, Any]) -> str:
         "- основывайся на переданных фактах о репозитории;\n"
         "- не меняй score и criteria: их считает backend отдельно;\n"
         "- дай понятное summary, strengths, risks и recommendations.\n\n"
+        "Требования к critical_parts:\n"
+        "- это обязательное поле, ты ОБЯЗАН вернуть critical_parts с непустым items;\n"
+        "- используй переданные факты о структуре репозитория, НЕ выдумывай файлы;\n"
+        "- для каждой критической части укажи только реальные файлы из фактов ниже;\n"
+        "- объясни, почему эта часть критична для работы всего проекта;\n"
+        "- выдели от 3 до 6 наиболее важных частей.\n\n"
+        "ВАЖНО: Твой JSON-ответ должен содержать ВСЕ четыре верхнеуровневых поля:\n"
+        "1. documentation_markdown_lines\n"
+        "2. business_summary\n"
+        "3. quality_assessment\n"
+        "4. critical_parts (обязательно с непустым items)\n"
+        "Не пропускай ни одно из них.\n\n"
         "Факты для оценки проекта, собранные backend-ом:\n"
         f"{quality_facts_json}\n\n"
+        "Факты о структуре репозитория для critical_parts:\n"
+        f"{critical_parts_facts_json}\n\n"
         f"Контекст проекта:\n{context_text}"
     )
 
@@ -317,6 +356,7 @@ async def build_documentation_context(repository: models.Repository) -> dict:
     }
 
     quality_facts = build_project_quality_facts(github_context)
+    critical_parts_facts = build_critical_parts_facts(github_context)
     context_text = trim_text(format_context_for_prompt(context), max_input_chars)
 
     return {
@@ -325,6 +365,7 @@ async def build_documentation_context(repository: models.Repository) -> dict:
         "github_error": context["github_error"],
         "github_context": context["github_context"],
         "quality_facts": quality_facts,
+        "critical_parts_facts": critical_parts_facts,
         "prompt_context": context_text,
         "source_updated_at": (
             context["github"].get("updated_at") if context["github"] else None
@@ -370,6 +411,7 @@ def build_mock_structured_result(context: dict) -> dict[str, Any]:
         "documentation_markdown": generate_mock_documentation(context),
         "business_summary": build_mock_business_summary(context),
         "quality_assessment": build_default_quality_assessment(quality_facts),
+        "critical_parts": build_mock_critical_parts(context),
     }
 
 
@@ -557,10 +599,21 @@ def parse_structured_documentation_response(
         quality_facts=quality_facts,
     )
 
+    critical_parts = payload.get("critical_parts")
+    if not isinstance(critical_parts, dict) or "items" not in critical_parts:
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "Structured documentation response does not contain "
+                "critical_parts with items. Try again."
+            ),
+        )
+
     return {
         "documentation_markdown": documentation.strip(),
         "business_summary": business_summary,
         "quality_assessment": quality_assessment,
+        "critical_parts": critical_parts,
     }
 
 
@@ -580,6 +633,7 @@ async def generate_repository_documentation(repository: models.Repository) -> di
             "documentation": structured_result["documentation_markdown"],
             "business_summary": structured_result["business_summary"],
             "quality_assessment": structured_result["quality_assessment"],
+            "critical_parts": structured_result["critical_parts"],
             "provider": "mock",
             "source_updated_at": context["source_updated_at"],
         }
@@ -594,12 +648,17 @@ async def generate_repository_documentation(repository: models.Repository) -> di
         ensure_github_context_available_for_gemini(context)
 
         raw_documentation = await generate_gemini_documentation(
-            prompt=build_prompt(context["prompt_context"], context["quality_facts"]),
+            prompt=build_prompt(
+                context["prompt_context"],
+                context["quality_facts"],
+                critical_parts_facts=context.get("critical_parts_facts"),
+            ),
             api_key=api_key,
             model=model,
             max_output_tokens=max_output_tokens,
             response_mime_type="application/json",
         )
+
         structured_result = parse_structured_documentation_response(
             raw_text=raw_documentation,
             quality_facts=context["quality_facts"],
@@ -609,6 +668,7 @@ async def generate_repository_documentation(repository: models.Repository) -> di
             "documentation": structured_result["documentation_markdown"],
             "business_summary": structured_result["business_summary"],
             "quality_assessment": structured_result["quality_assessment"],
+            "critical_parts": structured_result["critical_parts"],
             "provider": "gemini",
             "source_updated_at": context["source_updated_at"],
         }
@@ -618,12 +678,17 @@ async def generate_repository_documentation(repository: models.Repository) -> di
 
         try:
             raw_documentation = await generate_gemini_documentation(
-                prompt=build_prompt(context["prompt_context"], context["quality_facts"]),
+                prompt=build_prompt(
+                context["prompt_context"],
+                context["quality_facts"],
+                critical_parts_facts=context.get("critical_parts_facts"),
+            ),
                 api_key=api_key,
                 model=model,
                 max_output_tokens=max_output_tokens,
                 response_mime_type="application/json",
             )
+
             structured_result = parse_structured_documentation_response(
                 raw_text=raw_documentation,
                 quality_facts=context["quality_facts"],
@@ -633,6 +698,7 @@ async def generate_repository_documentation(repository: models.Repository) -> di
                 "documentation": structured_result["documentation_markdown"],
                 "business_summary": structured_result["business_summary"],
                 "quality_assessment": structured_result["quality_assessment"],
+                "critical_parts": structured_result["critical_parts"],
                 "provider": "gemini",
                 "source_updated_at": context["source_updated_at"],
             }
@@ -645,6 +711,7 @@ async def generate_repository_documentation(repository: models.Repository) -> di
                 "documentation": structured_result["documentation_markdown"],
                 "business_summary": structured_result["business_summary"],
                 "quality_assessment": structured_result["quality_assessment"],
+                "critical_parts": structured_result["critical_parts"],
                 "provider": "mock_fallback",
                 "source_updated_at": context["source_updated_at"],
             }
@@ -654,6 +721,7 @@ async def generate_repository_documentation(repository: models.Repository) -> di
         "documentation": structured_result["documentation_markdown"],
         "business_summary": structured_result["business_summary"],
         "quality_assessment": structured_result["quality_assessment"],
+        "critical_parts": structured_result["critical_parts"],
         "provider": "mock",
         "source_updated_at": context["source_updated_at"],
     }
@@ -670,7 +738,7 @@ async def generate_gemini_raw_debug_response(repository: models.Repository) -> d
     context = await build_documentation_context(repository)
     api_key = os.getenv("GEMINI_API_KEY", "")
     model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
-    max_output_tokens = get_int_env("DOCUMENTATION_MAX_OUTPUT_TOKENS", 8192)
+    max_output_tokens = get_int_env("DOCUMENTATION_MAX_OUTPUT_TOKENS", 15000)
 
     if not api_key:
         raise HTTPException(
@@ -680,7 +748,11 @@ async def generate_gemini_raw_debug_response(repository: models.Repository) -> d
 
     ensure_github_context_available_for_gemini(context)
 
-    prompt = build_prompt(context["prompt_context"], context["quality_facts"])
+    prompt = build_prompt(
+        context["prompt_context"],
+        context["quality_facts"],
+        critical_parts_facts=context.get("critical_parts_facts"),
+    )
     raw_response = await generate_gemini_documentation(
         prompt=prompt,
         api_key=api_key,

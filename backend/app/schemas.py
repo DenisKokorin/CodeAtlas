@@ -215,6 +215,15 @@ class QualityAssessmentResponse(BaseModel):
     quality_assessment: dict[str, Any]
 
 
+class CriticalPartsResponse(BaseModel):
+    repository_id: int
+    documentation_version_id: int
+    app_version: str
+    revision_number: int
+    display_name: str
+    critical_parts: dict[str, Any]
+
+
 class GitHubRepositoryAnalyzeRequest(BaseModel):
     repo_url: str = Field(..., min_length=1, max_length=255)
 
