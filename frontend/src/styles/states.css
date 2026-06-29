@@ -1,0 +1,41 @@
+.form-error {
+  color: #fca5a5;
+  margin-top: 0;
+  margin-bottom: 16px;
+}
+
+.form-success {
+  color: #86efac;
+  margin-top: 0;
+  margin-bottom: 16px;
+}
+
+body.theme-light .form-error {
+  color: #dc2626;
+}
+
+body.theme-light .form-success {
+  color: #15803d;
+}
+
+.state-message {
+  line-height: 1.6;
+}
+
+body.theme-dark .state-message {
+  color: #d8ccff;
+}
+
+body.theme-light .state-message {
+  color: #5b4a8c;
+}
+
+@keyframes floatCard {
+  0%,
+  100% {
+    transform: translateY(0px) scale(1);
+  }
+  50% {
+    transform: translateY(-14px) scale(1.015);
+  }
+}

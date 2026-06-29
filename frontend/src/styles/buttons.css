@@ -1,0 +1,74 @@
+.nav-button,
+.primary-button,
+.secondary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 11px 18px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  transition: transform 0.2s ease, opacity 0.2s ease, border-color 0.2s ease;
+}
+
+.nav-button,
+.primary-button {
+  background: linear-gradient(135deg, #5b34c4, #6e4cff);
+  color: #ffffff;
+}
+
+.secondary-button {
+  background: transparent;
+}
+
+body.theme-dark .secondary-button {
+  border: 1px solid rgba(167, 139, 250, 0.28);
+  color: #ece7ff;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+body.theme-light .secondary-button {
+  border: 1px solid rgba(110, 76, 255, 0.2);
+  color: #4c2ea3;
+  background: rgba(110, 76, 255, 0.06);
+}
+
+.nav-button,
+.nav-button:hover,
+.primary-button,
+.primary-button:hover {
+  color: #ffffff !important;
+}
+
+.nav-button:hover,
+.primary-button:hover,
+.secondary-button:hover {
+  transform: translateY(-1px);
+  opacity: 0.96;
+}
+
+.nav-logout {
+  padding: 11px 18px;
+  border-radius: 12px;
+  transition: transform 0.2s ease, opacity 0.2s ease, border-color 0.2s ease;
+}
+
+body.theme-dark .nav-logout {
+  border: 1px solid rgba(244, 114, 182, 0.28);
+  color: #fbcfe8;
+  background: rgba(190, 24, 93, 0.08);
+}
+
+body.theme-light .nav-logout {
+  border: 1px solid rgba(244, 114, 182, 0.22);
+  color: #be185d;
+  background: rgba(190, 24, 93, 0.06);
+}
+
+.nav-logout:hover {
+  transform: translateY(-1px);
+}
+
+button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
