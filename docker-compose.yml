@@ -11,5 +11,15 @@ services:
     volumes:
       - backend_data:/app/data
 
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: code-atlas-frontend
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
 volumes:
   backend_data:
