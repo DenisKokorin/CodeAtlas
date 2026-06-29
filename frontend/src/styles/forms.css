@@ -1,0 +1,120 @@
+.form-card {
+  max-width: 760px;
+  margin: 40px auto 0;
+}
+
+label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 500;
+}
+
+body.theme-dark label {
+  color: #f3efff;
+}
+
+body.theme-light label {
+  color: #2b1f52;
+}
+
+input,
+textarea,
+select {
+  width: 100%;
+  padding: 14px 16px;
+  margin: 0 0 18px;
+  border-radius: 14px;
+  font: inherit;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+textarea {
+  resize: none;
+  overflow-y: auto;
+}
+
+body.theme-dark input,
+body.theme-dark textarea,
+body.theme-dark select {
+  border: 1px solid rgba(167, 139, 250, 0.18);
+  background: rgba(255, 255, 255, 0.04);
+  color: #f5f3ff;
+}
+
+body.theme-light input,
+body.theme-light textarea,
+body.theme-light select {
+  border: 1px solid rgba(110, 76, 255, 0.12);
+  background: rgba(110, 76, 255, 0.03);
+  color: #2b1f52;
+}
+
+body.theme-dark input::placeholder,
+body.theme-dark textarea::placeholder {
+  color: #b8abd8;
+}
+
+body.theme-light input::placeholder,
+body.theme-light textarea::placeholder {
+  color: #8b79bf;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: #8b5cf6;
+}
+
+.auth-hint {
+  margin-top: 18px;
+}
+
+body.theme-dark .auth-hint-text {
+  color: #d8ccff;
+}
+
+body.theme-light .auth-hint-text {
+  color: #2b1f52;
+}
+
+.auth-hint-link {
+  color: #6e4cff !important;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.auth-hint-link:hover {
+  opacity: 0.85;
+}
+
+.readonly-input {
+  cursor: not-allowed;
+}
+
+body.theme-dark .readonly-input {
+  color: #a99fd0;
+  background: rgba(255, 255, 255, 0.025);
+  border-color: rgba(167, 139, 250, 0.1);
+}
+
+body.theme-light .readonly-input {
+  color: #7c6da8;
+  background: rgba(110, 76, 255, 0.035);
+  border-color: rgba(110, 76, 255, 0.1);
+}
+
+.field-hint {
+  margin-top: -10px;
+  margin-bottom: 18px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+body.theme-dark .field-hint {
+  color: #b8abd8;
+}
+
+body.theme-light .field-hint {
+  color: #7c6da8;
+}

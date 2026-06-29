@@ -1,0 +1,42 @@
+@media (max-width: 1000px) {
+  .hero,
+  .details-grid,
+  .quality-dashboard {
+    grid-template-columns: 1fr;
+    min-height: auto;
+    padding-top: 20px;
+  }
+
+  .form-grid,
+  .criteria-grid,
+  .two-columns,
+  .three-columns,
+  .features,
+  .meta-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hero h1 {
+    font-size: 38px;
+  }
+
+  .header-inner,
+  .section-top-split,
+  .repo-card-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .page-title {
+    text-align: left;
+  }
+
+  .header-left {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .export-buttons {
+    justify-content: flex-start;
+  }
+}
