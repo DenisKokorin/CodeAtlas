@@ -350,6 +350,7 @@ def create_documentation_version(
         business_summary=serialize_json_field(business_summary),
         quality_assessment=serialize_json_field(quality_assessment),
         critical_parts=serialize_json_field(critical_parts),
+        documentation_source="generated",
         provider=provider,
         source_updated_at=source_updated_at,
         is_latest_for_app_version=True,
@@ -398,6 +399,32 @@ def save_repository_documentation(
 
     return documentation_version
 
+
+
+def update_documentation_version_content(
+    db: Session,
+    repository: models.Repository,
+    documentation_version: models.DocumentationVersion,
+    documentation: str,
+):
+    now = datetime.now(timezone.utc)
+
+    documentation_version.documentation = documentation
+    documentation_version.documentation_source = "manual_edit"
+    documentation_version.updated_at = now
+
+    if documentation_version.is_latest_for_repository:
+        repository.generated_documentation = documentation
+        repository.documentation_updated_at = now
+        repository.documentation_is_stale = False
+        repository.status = "ready"
+        repository.updated_at = now
+
+    db.commit()
+    db.refresh(documentation_version)
+    db.refresh(repository)
+
+    return documentation_version
 
 def get_documentation_versions(
     db: Session,

@@ -115,6 +115,7 @@ class DocumentationVersion(Base):
     business_summary = Column(Text, nullable=True)
     quality_assessment = Column(Text, nullable=True)
     critical_parts = Column(Text, nullable=True)
+    documentation_source = Column(String(50), nullable=False, default="generated")
     provider = Column(String(50), nullable=True)
     source_updated_at = Column(String(50), nullable=True)
     is_latest_for_app_version = Column(Boolean, nullable=False, default=True)

@@ -60,6 +60,7 @@ export type DocumentationResponse = {
   app_version: string | null;
   revision_number: number | null;
   display_name: string | null;
+  documentation_source: string | null;
 };
 
 export type DocumentationVersionListItem = {
@@ -74,6 +75,7 @@ export type DocumentationVersionListItem = {
   is_latest_for_repository: boolean;
   created_at: string;
   updated_at: string;
+  documentation_source: string;
 };
 
 export type DocumentationVersion = DocumentationVersionListItem & {
@@ -228,6 +230,23 @@ export async function getDocumentationVersions(repositoryId: number) {
   const response = await apiFetch(`/repositories/${repositoryId}/documentation/versions`, { method: "GET" });
   if (!response.ok) throw new Error("Не удалось загрузить версии документации");
   return response.json() as Promise<DocumentationVersionListResponse>;
+}
+
+export async function updateDocumentationVersionContent(
+  repositoryId: number,
+  versionId: number,
+  documentation: string
+) {
+  const response = await apiFetch(`/repositories/${repositoryId}/documentation/versions/${versionId}/content`, {
+    method: "PUT",
+    body: JSON.stringify({ documentation }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, "Не удалось сохранить документацию"));
+  }
+
+  return response.json() as Promise<DocumentationVersion>;
 }
 
 export async function getDocumentationVersion(repositoryId: number, versionId: number) {

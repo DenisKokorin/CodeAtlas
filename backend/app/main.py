@@ -8,10 +8,34 @@ from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 from app.auth import verify_docs_credentials
+from sqlalchemy import inspect, text
+
 from app.database import Base, engine
 from app.routes import auth, export, external, repositories
 
 Base.metadata.create_all(bind=engine)
+
+
+def ensure_runtime_schema_updates():
+    inspector = inspect(engine)
+
+    if "documentation_versions" not in inspector.get_table_names():
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("documentation_versions")}
+
+    if "documentation_source" not in columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "ALTER TABLE documentation_versions "
+                    "ADD COLUMN documentation_source VARCHAR(50) "
+                    "NOT NULL DEFAULT 'generated'"
+                )
+            )
+
+
+ensure_runtime_schema_updates()
 
 basic_security = HTTPBasic()
 

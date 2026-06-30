@@ -138,6 +138,23 @@ class RepositoryListResponse(BaseModel):
     page_size: int
 
 
+class DocumentationUpdateRequest(BaseModel):
+    documentation: str = Field(
+        ...,
+        min_length=1,
+        max_length=500000,
+        description="Updated Markdown documentation content",
+    )
+
+    @field_validator("documentation")
+    @classmethod
+    def validate_documentation(cls, value: str):
+        if not value.strip():
+            raise ValueError("Documentation cannot be empty")
+
+        return value
+
+
 class DocumentationGenerationRequest(BaseModel):
     app_version: str = Field(
         ...,
@@ -166,6 +183,7 @@ class DocumentationVersionListItem(BaseModel):
     display_name: str
     provider: Optional[str] = None
     source_updated_at: Optional[str] = None
+    documentation_source: str = "generated"
     is_latest_for_app_version: bool
     is_latest_for_repository: bool
     created_at: datetime
@@ -195,6 +213,7 @@ class RepositoryDocumentationResponse(BaseModel):
     app_version: Optional[str] = None
     revision_number: Optional[int] = None
     display_name: Optional[str] = None
+    documentation_source: Optional[str] = None
 
 
 class BusinessSummaryResponse(BaseModel):
