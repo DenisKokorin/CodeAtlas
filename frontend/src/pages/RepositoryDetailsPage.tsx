@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
+import DocumentationEditor from "../components/DocumentationEditor";
 import Layout from "../components/Layout";
 import SEO from "../components/SEO";
 import type { UserRole } from "../api/authApi";
@@ -23,6 +24,7 @@ import {
   type ExportFormat,
   type QualityAssessmentResponse,
   type Repository,
+  updateDocumentationVersionContent,
 } from "../api/repositoriesApi";
 
 type RepositoryDetailsPageProps = {
@@ -39,6 +41,41 @@ function safeDate(value?: string | null) {
   if (!value) return "не указано";
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString("ru-RU");
+}
+
+function documentationSourceLabel(value?: string | null) {
+  if (value === "manual_edit") return "Отредактировано вручную";
+  return "Сгенерировано ИИ";
+}
+
+function mapVersionToDocumentationResponse(
+  repositoryId: number,
+  version: {
+    id: number;
+    documentation: string;
+    provider: string | null;
+    created_at: string;
+    updated_at: string;
+    source_updated_at: string | null;
+    app_version: string;
+    revision_number: number;
+    display_name: string;
+    documentation_source: string;
+  }
+): DocumentationResponse {
+  return {
+    repository_id: repositoryId,
+    documentation: version.documentation,
+    provider: version.provider,
+    updated_at: version.updated_at ?? version.created_at,
+    source_updated_at: version.source_updated_at,
+    is_stale: false,
+    documentation_version_id: version.id,
+    app_version: version.app_version,
+    revision_number: version.revision_number,
+    display_name: version.display_name,
+    documentation_source: version.documentation_source,
+  };
 }
 
 function ListBlock({ title, items }: { title: string; items?: string[] }) {
@@ -67,6 +104,10 @@ function RepositoryDetailsPage({ theme, toggleTheme, userEmail, onLogout, userRo
   const [qualityAssessment, setQualityAssessment] = useState<QualityAssessmentResponse | null>(null);
   const [criticalParts, setCriticalParts] = useState<CriticalPartsResponse | null>(null);
   const [selectedVersionId, setSelectedVersionId] = useState<number | null>(null);
+  const [isEditingDocumentation, setIsEditingDocumentation] = useState(false);
+  const [editedDocumentation, setEditedDocumentation] = useState("");
+  const [isSavingDocumentation, setIsSavingDocumentation] = useState(false);
+  const [saveEditError, setSaveEditError] = useState("");
   const [activeView, setActiveView] = useState<ActiveView>("documentation");
   const [appVersion, setAppVersion] = useState("1.0.0");
   const [isLoading, setIsLoading] = useState(true);
@@ -110,6 +151,8 @@ function RepositoryDetailsPage({ theme, toggleTheme, userEmail, onLogout, userRo
     setIsLoading(true);
     setError("");
     setGenerationError("");
+    setSaveEditError("");
+    setIsEditingDocumentation(false);
 
     try {
       const repositoryData = await getRepositoryById(repositoryId);
@@ -179,19 +222,10 @@ function RepositoryDetailsPage({ theme, toggleTheme, userEmail, onLogout, userRo
 
     try {
       const version = await getDocumentationVersion(repositoryId, versionId);
-      setDocumentation({
-        repository_id: repositoryId,
-        documentation: version.documentation,
-        provider: version.provider,
-        updated_at: version.created_at,
-        source_updated_at: version.source_updated_at,
-        is_stale: false,
-        documentation_version_id: version.id,
-        app_version: version.app_version,
-        revision_number: version.revision_number,
-        display_name: version.display_name,
-      });
+      setDocumentation(mapVersionToDocumentationResponse(repositoryId, version));
       setSelectedVersionId(versionId);
+      setIsEditingDocumentation(false);
+      setSaveEditError("");
       await loadBlocks(versionId);
       setActiveView("documentation");
     } catch {
@@ -199,8 +233,65 @@ function RepositoryDetailsPage({ theme, toggleTheme, userEmail, onLogout, userRo
     }
   };
 
+  const handleStartEdit = () => {
+    if (!documentation?.documentation) return;
+
+    setEditedDocumentation(documentation.documentation);
+    setSaveEditError("");
+    setIsEditingDocumentation(true);
+  };
+
+  const handleCancelEdit = () => {
+    setSaveEditError("");
+    setEditedDocumentation(documentation?.documentation ?? "");
+    setIsEditingDocumentation(false);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!repositoryId || !documentation?.documentation_version_id) {
+      setSaveEditError("Не удалось определить версию документации для сохранения.");
+      return;
+    }
+
+    if (!editedDocumentation.trim()) {
+      setSaveEditError("Документация не может быть пустой.");
+      return;
+    }
+
+    setIsSavingDocumentation(true);
+    setSaveEditError("");
+
+    try {
+      const updatedVersion = await updateDocumentationVersionContent(
+        repositoryId,
+        documentation.documentation_version_id,
+        editedDocumentation,
+      );
+
+      setDocumentation(mapVersionToDocumentationResponse(repositoryId, updatedVersion));
+      setVersions((currentVersions) =>
+        currentVersions.map((version) =>
+          version.id === updatedVersion.id
+            ? {
+                ...version,
+                updated_at: updatedVersion.updated_at,
+                documentation_source: updatedVersion.documentation_source,
+              }
+            : version,
+        ),
+      );
+      setIsEditingDocumentation(false);
+    } catch (err) {
+      setSaveEditError(err instanceof Error ? err.message : "Не удалось сохранить документацию.");
+    } finally {
+      setIsSavingDocumentation(false);
+    }
+  };
+
   const handleLatestVersion = async () => {
     setSelectedVersionId(null);
+    setIsEditingDocumentation(false);
+    setSaveEditError("");
     await loadRepository();
     setActiveView("documentation");
   };
@@ -259,6 +350,7 @@ function RepositoryDetailsPage({ theme, toggleTheme, userEmail, onLogout, userRo
                 <div><strong>Provider</strong><span>{documentation?.provider ?? repository.documentation_provider ?? "—"}</span></div>
                 <div><strong>App version</strong><span>{documentation?.app_version ?? "—"}</span></div>
                 <div><strong>Revision</strong><span>{documentation?.revision_number ?? "—"}</span></div>
+                <div><strong>Source</strong><span>{documentation?.documentation ? documentationSourceLabel(documentation.documentation_source) : "—"}</span></div>
                 <div><strong>Updated</strong><span>{safeDate(documentation?.updated_at ?? repository.documentation_updated_at)}</span></div>
               </div>
 
@@ -310,12 +402,30 @@ function RepositoryDetailsPage({ theme, toggleTheme, userEmail, onLogout, userRo
             <div className="card">
               <div className="repo-card-head">
                 <div>
-                  <h3>{documentation?.display_name ?? "Сгенерированная документация"}</h3>
+                  <div className="title-row">
+                    <h3>{documentation?.display_name ?? "Сгенерированная документация"}</h3>
+                    {documentation?.documentation && (
+                      <span className={`source-badge source-${documentation.documentation_source ?? "generated"}`}>
+                        {documentationSourceLabel(documentation.documentation_source)}
+                      </span>
+                    )}
+                  </div>
                   <p>Мультиформатный экспорт применяется только к основной документации.</p>
                 </div>
                 <div className="export-buttons">
+                  {documentation?.documentation && !isEditingDocumentation && (
+                    <button type="button" className="primary-button" onClick={handleStartEdit}>
+                      Редактировать документацию
+                    </button>
+                  )}
                   {(["markdown", "txt", "html", "docx", "json"] as ExportFormat[]).map((format) => (
-                    <button key={format} type="button" className="secondary-button" onClick={() => handleExport(format)} disabled={!documentation?.documentation}>
+                    <button
+                      key={format}
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => handleExport(format)}
+                      disabled={!documentation?.documentation || isEditingDocumentation}
+                    >
                       {format.toUpperCase()}
                     </button>
                   ))}
@@ -323,7 +433,27 @@ function RepositoryDetailsPage({ theme, toggleTheme, userEmail, onLogout, userRo
               </div>
 
               {!documentation?.documentation && <p>Документация ещё не сгенерирована.</p>}
-              {documentation?.documentation && (
+              {saveEditError && <p className="form-error">{saveEditError}</p>}
+
+              {documentation?.documentation && isEditingDocumentation && (
+                <div className="documentation-editor-wrap">
+                  <DocumentationEditor
+                    key={documentation.documentation_version_id ?? "latest"}
+                    markdown={editedDocumentation}
+                    onChange={setEditedDocumentation}
+                  />
+                  <div className="editor-actions">
+                    <button type="button" className="primary-button" disabled={isSavingDocumentation} onClick={handleSaveEdit}>
+                      {isSavingDocumentation ? "Сохранение..." : "Сохранить изменения"}
+                    </button>
+                    <button type="button" className="secondary-button" disabled={isSavingDocumentation} onClick={handleCancelEdit}>
+                      Отмена
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {documentation?.documentation && !isEditingDocumentation && (
                 <div className="documentation-preview markdown-content">
                   <ReactMarkdown>{documentation.documentation}</ReactMarkdown>
                 </div>
@@ -427,6 +557,7 @@ function RepositoryDetailsPage({ theme, toggleTheme, userEmail, onLogout, userRo
                     <strong>{version.display_name}</strong>
                     <span>App version {version.app_version}</span>
                     <span>Создано: {safeDate(version.created_at)}</span>
+                    <span>{documentationSourceLabel(version.documentation_source)}</span>
                     {version.is_latest_for_repository && <em>Актуальная</em>}
                   </button>
                 ))}

@@ -200,3 +200,78 @@ body.theme-light .markdown-content pre {
   margin: 80px auto 0;
   text-align: center;
 }
+
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.source-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.source-generated,
+.source-generated_ai,
+.source-null {
+  background: rgba(139, 92, 246, 0.14);
+  color: #8b5cf6;
+}
+
+.source-manual_edit {
+  background: rgba(34, 197, 94, 0.14);
+  color: #22c55e;
+}
+
+.documentation-editor-wrap {
+  margin-top: 16px;
+}
+
+.documentation-editor {
+  min-height: 520px;
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.documentation-editor .mdxeditor-toolbar {
+  border-top-left-radius: 16px;
+  border-top-right-radius: 16px;
+}
+
+.documentation-editor .mdxeditor-root-contenteditable,
+.documentation-editor .cm-editor {
+  min-height: 460px;
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.documentation-editor .mdxeditor-root-contenteditable {
+  padding: 18px;
+}
+
+body.theme-dark .documentation-editor {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(167, 139, 250, 0.16);
+  color: #ece7ff;
+}
+
+body.theme-light .documentation-editor {
+  background: rgba(110, 76, 255, 0.03);
+  border: 1px solid rgba(110, 76, 255, 0.12);
+  color: #2b1f52;
+}
+
+.editor-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}

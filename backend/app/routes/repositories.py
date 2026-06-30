@@ -356,6 +356,7 @@ async def generate_repository_documentation(
         "app_version": documentation_version.app_version,
         "revision_number": documentation_version.revision_number,
         "display_name": documentation_version.display_name,
+        "documentation_source": documentation_version.documentation_source,
     }
 
 
@@ -420,6 +421,36 @@ def read_documentation_version(
         )
 
     return documentation_version
+
+
+@router.put(
+    "/{repository_id}/documentation/versions/{version_id}/content",
+    response_model=schemas.DocumentationVersionResponse,
+)
+def update_documentation_version_content(
+    repository_id: int,
+    version_id: int,
+    payload: schemas.DocumentationUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    repository = get_owned_repository_or_404(
+        db=db,
+        repository_id=repository_id,
+        owner_id=current_user.id,
+    )
+    documentation_version = get_documentation_version_or_404(
+        db=db,
+        repository=repository,
+        version_id=version_id,
+    )
+
+    return crud.update_documentation_version_content(
+        db=db,
+        repository=repository,
+        documentation_version=documentation_version,
+        documentation=payload.documentation,
+    )
 
 
 @router.get(
@@ -612,4 +643,5 @@ def read_repository_documentation(
         "app_version": latest_version.app_version if latest_version else None,
         "revision_number": latest_version.revision_number if latest_version else None,
         "display_name": latest_version.display_name if latest_version else None,
+        "documentation_source": latest_version.documentation_source if latest_version else None,
     }
