@@ -267,3 +267,72 @@ class GitHubRepositoryInfo(BaseModel):
     open_issues: int
     default_branch: str | None
     updated_at: str | None
+
+# --- RAG / Chat Schemas ---
+
+class IndexStatusResponse(BaseModel):
+    repository_id: int
+    total_chunks: int
+    documentation_chunks: int
+    code_chunks: int
+    metadata_chunks: int
+    status: str
+    provider: str
+
+    class Config:
+        from_attributes = True
+
+
+class CreateConversationRequest(BaseModel):
+    title: str | None = Field(None, max_length=255)
+
+
+class ConversationResponse(BaseModel):
+    id: int
+    repository_id: int
+    user_id: int
+    title: str | None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ConversationListResponse(BaseModel):
+    items: list[ConversationResponse]
+    total: int
+
+
+class SourceReference(BaseModel):
+    chunk_id: int
+    source_path: str | None
+    chunk_type: str
+    relevance_score: float
+
+
+class AskQuestionRequest(BaseModel):
+    question: str = Field(..., min_length=1, max_length=5000)
+
+
+class MessageResponse(BaseModel):
+    id: int
+    conversation_id: int
+    role: str
+    content: str
+    sources: list[SourceReference] | None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class AskQuestionResponse(BaseModel):
+    answer: str
+    sources: list[SourceReference]
+    provider: str
+
+
+class MessageListResponse(BaseModel):
+    items: list[MessageResponse]
+    total: int
