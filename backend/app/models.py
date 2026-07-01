@@ -6,6 +6,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -44,6 +45,11 @@ class User(Base):
     )
     refresh_tokens = relationship(
         "RefreshToken",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    chat_conversations = relationship(
+        "ChatConversation",
         back_populates="user",
         cascade="all, delete-orphan",
     )
@@ -86,6 +92,16 @@ class Repository(Base):
     owner = relationship("User", back_populates="repositories")
     documentation_versions = relationship(
         "DocumentationVersion",
+        back_populates="repository",
+        cascade="all, delete-orphan",
+    )
+    knowledge_chunks = relationship(
+        "KnowledgeChunk",
+        back_populates="repository",
+        cascade="all, delete-orphan",
+    )
+    chat_conversations = relationship(
+        "ChatConversation",
         back_populates="repository",
         cascade="all, delete-orphan",
     )
@@ -160,3 +176,93 @@ class RefreshToken(Base):
     revoked_at = Column(DateTime(timezone=True), nullable=True)
 
     user = relationship("User", back_populates="refresh_tokens")
+
+
+class KnowledgeChunk(Base):
+    __tablename__ = "knowledge_chunks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    repository_id = Column(
+        Integer,
+        ForeignKey("repositories.id"),
+        nullable=False,
+        index=True,
+    )
+    chunk_type = Column(String(50), nullable=False, index=True)
+    content = Column(Text, nullable=False)
+    embedding = Column(LargeBinary, nullable=True)
+    metadata_json = Column(Text, nullable=True)
+    source_path = Column(String(500), nullable=True)
+    language = Column(String(50), nullable=True)
+    token_count = Column(Integer, nullable=True)
+
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    repository = relationship("Repository", back_populates="knowledge_chunks")
+
+
+class ChatConversation(Base):
+    __tablename__ = "chat_conversations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    repository_id = Column(
+        Integer,
+        ForeignKey("repositories.id"),
+        nullable=False,
+        index=True,
+    )
+    user_id = Column(
+        Integer,
+        ForeignKey("users.id"),
+        nullable=False,
+        index=True,
+    )
+    title = Column(String(255), nullable=True)
+
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    repository = relationship("Repository", back_populates="chat_conversations")
+    user = relationship("User", back_populates="chat_conversations")
+    messages = relationship(
+        "ChatMessage",
+        back_populates="conversation",
+        cascade="all, delete-orphan",
+        order_by="ChatMessage.created_at.asc()",
+    )
+
+
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    conversation_id = Column(
+        Integer,
+        ForeignKey("chat_conversations.id"),
+        nullable=False,
+        index=True,
+    )
+    role = Column(String(20), nullable=False)
+    content = Column(Text, nullable=False)
+    sources_json = Column(Text, nullable=True)
+
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    conversation = relationship("ChatConversation", back_populates="messages")

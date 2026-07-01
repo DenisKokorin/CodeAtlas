@@ -6,6 +6,7 @@ from app.auth import get_current_user
 from app.database import get_db
 from app.services import documentation_service
 from app.services.github_service import fetch_repository_info
+from app.services.rag_service import build_index as build_rag_index
 
 router = APIRouter(prefix="/repositories", tags=["Repositories"])
 
@@ -344,6 +345,12 @@ async def generate_repository_documentation(
         provider=result["provider"],
         source_updated_at=result["source_updated_at"],
     )
+
+    # Auto-build RAG index after successful documentation generation
+    try:
+        await build_rag_index(db=db, repository=repository)
+    except Exception:
+        pass
 
     return {
         "repository_id": repository.id,
