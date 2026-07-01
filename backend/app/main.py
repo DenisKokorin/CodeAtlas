@@ -11,7 +11,7 @@ from app.auth import verify_docs_credentials
 from sqlalchemy import inspect, text
 
 from app.database import Base, engine
-from app.routes import auth, export, external, repositories
+from app.routes import auth, chat, export, external, repositories
 
 Base.metadata.create_all(bind=engine)
 
@@ -117,6 +117,7 @@ if os.getenv("ENABLE_REDOC", "false").lower() == "true":
 
 
 app.include_router(auth.router)
+app.include_router(chat.router)
 app.include_router(repositories.router)
 app.include_router(external.router)
 app.include_router(export.router)
