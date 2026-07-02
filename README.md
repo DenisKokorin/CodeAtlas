@@ -60,6 +60,50 @@ python -m uvicorn app.main:app --reload
 http://127.0.0.1:8000
 ```
 
+## Локальный запуск frontend
+
+Frontend находится в папке:
+
+```text
+frontend
+```
+
+Для запуска перейдите в папку frontend:
+
+```bash
+cd frontend
+```
+
+Установите зависимости:
+
+```bash
+npm install
+```
+
+Запустите frontend в режиме разработки:
+
+```bash
+npm run dev
+```
+
+После запуска frontend будет доступен по адресу:
+
+```text
+http://localhost:5173
+```
+
+По умолчанию frontend обращается к backend по адресу:
+
+```text
+http://127.0.0.1:8000
+```
+
+Если backend запущен на другом адресе, создайте файл `frontend/.env`:
+
+```env
+VITE_API_URL=http://127.0.0.1:8000
+```
+
 ## Swagger UI
 
 Swagger UI доступен по адресу:
@@ -434,50 +478,6 @@ quality_facts
 ```
 
 Этот endpoint нужен только для отладки ошибок парсинга JSON.
-
-## Локальный запуск frontend
-
-Frontend находится в папке:
-
-```text
-frontend
-```
-
-Для запуска перейдите в папку frontend:
-
-```bash
-cd frontend
-```
-
-Установите зависимости:
-
-```bash
-npm install
-```
-
-Запустите frontend в режиме разработки:
-
-```bash
-npm run dev
-```
-
-После запуска frontend будет доступен по адресу:
-
-```text
-http://localhost:5173
-```
-
-По умолчанию frontend обращается к backend по адресу:
-
-```text
-http://127.0.0.1:8000
-```
-
-Если backend запущен на другом адресе, создайте файл `frontend/.env`:
-
-```env
-VITE_API_URL=http://127.0.0.1:8000
-```
 
 ## Что реализовано во frontend
 
