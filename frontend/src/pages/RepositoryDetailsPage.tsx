@@ -7,17 +7,24 @@ import SEO from "../components/SEO";
 import type { UserRole } from "../api/authApi";
 import { getRepositoryGitHubInfo, type GitHubRepositoryInfo } from "../api/githubApi";
 import {
+  askChatQuestion,
+  createChatConversation,
   deleteRepository,
   downloadExport,
   generateDocumentation,
   getBusinessSummary,
+  getChatConversations,
+  getChatMessages,
   getCriticalParts,
   getDocumentationVersion,
   getDocumentationVersions,
   getLatestDocumentation,
   getQualityAssessment,
   getRepositoryById,
+  rebuildChatIndex,
   type BusinessSummaryResponse,
+  type ChatConversation,
+  type ChatMessage,
   type CriticalPartsResponse,
   type DocumentationResponse,
   type DocumentationVersionListItem,
@@ -35,7 +42,7 @@ type RepositoryDetailsPageProps = {
   userRole: UserRole | null;
 };
 
-type ActiveView = "documentation" | "summary" | "critical" | "quality" | "versions";
+type ActiveView = "documentation" | "summary" | "critical" | "quality" | "versions" | "chat";
 
 function safeDate(value?: string | null) {
   if (!value) return "не указано";
@@ -116,6 +123,15 @@ function RepositoryDetailsPage({ theme, toggleTheme, userEmail, onLogout, userRo
   const [error, setError] = useState("");
   const [generationError, setGenerationError] = useState("");
   const [blockInfo, setBlockInfo] = useState("");
+  const [chatConversations, setChatConversations] = useState<ChatConversation[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<number | null>(null);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatError, setChatError] = useState("");
+  const [chatInfo, setChatInfo] = useState("");
+  const [isChatLoading, setIsChatLoading] = useState(false);
+  const [isChatIndexing, setIsChatIndexing] = useState(false);
+  const [isSendingMessage, setIsSendingMessage] = useState(false);
 
   const loadBlocks = async (versionId?: number) => {
     if (!repositoryId) return;
@@ -197,6 +213,132 @@ function RepositoryDetailsPage({ theme, toggleTheme, userEmail, onLogout, userRo
   useEffect(() => {
     loadRepository();
   }, [id]);
+
+  const loadChatConversations = async (selectedConversationId?: number | null) => {
+    if (!repositoryId) return;
+
+    setChatError("");
+
+    try {
+      const conversations = await getChatConversations(repositoryId);
+      setChatConversations(conversations.items);
+
+      if (conversations.items.length === 0) {
+        setActiveConversationId(null);
+        setChatMessages([]);
+        return;
+      }
+
+      const nextConversationId = selectedConversationId ?? activeConversationId;
+      const existingConversation = nextConversationId
+        ? conversations.items.find((conversation) => conversation.id === nextConversationId)
+        : undefined;
+
+      setActiveConversationId(existingConversation?.id ?? conversations.items[0].id);
+    } catch (err) {
+      setChatError(err instanceof Error ? err.message : "Не удалось загрузить историю чата.");
+    }
+  };
+
+  const loadChatMessages = async (conversationId: number) => {
+    if (!repositoryId) return;
+
+    setIsChatLoading(true);
+    setChatError("");
+
+    try {
+      const messages = await getChatMessages(repositoryId, conversationId);
+      setChatMessages(messages.items);
+    } catch (err) {
+      setChatError(err instanceof Error ? err.message : "Не удалось загрузить сообщения чата.");
+    } finally {
+      setIsChatLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeView !== "chat" || !repositoryId) {
+      return;
+    }
+
+    void loadChatConversations();
+  }, [activeView, repositoryId]);
+
+  useEffect(() => {
+    if (activeView !== "chat" || !activeConversationId) {
+      return;
+    }
+
+    void loadChatMessages(activeConversationId);
+  }, [activeView, activeConversationId]);
+
+  const handleBuildChatIndex = async () => {
+    if (!repositoryId) return;
+
+    setIsChatIndexing(true);
+    setChatError("");
+    setChatInfo("");
+
+    try {
+      const result = await rebuildChatIndex(repositoryId);
+      setChatInfo(`Индекс собран: ${result.total_chunks} чанков (${result.provider}).`);
+    } catch (err) {
+      setChatError(err instanceof Error ? err.message : "Не удалось собрать индекс знаний.");
+    } finally {
+      setIsChatIndexing(false);
+    }
+  };
+
+  const handleStartNewConversation = async () => {
+    if (!repositoryId) return;
+
+    setChatError("");
+    setChatInfo("");
+
+    try {
+      const conversation = await createChatConversation(repositoryId, "Новый чат");
+      setChatConversations((current) => [conversation, ...current]);
+      setActiveConversationId(conversation.id);
+      setChatMessages([]);
+    } catch (err) {
+      setChatError(err instanceof Error ? err.message : "Не удалось создать новый чат.");
+    }
+  };
+
+  const handleSendMessage = async (event?: React.FormEvent) => {
+    event?.preventDefault();
+
+    if (!repositoryId) return;
+
+    const trimmedQuestion = chatInput.trim();
+    if (!trimmedQuestion || isSendingMessage) return;
+
+    setIsSendingMessage(true);
+    setChatError("");
+    setChatInfo("");
+
+    try {
+      let conversationId = activeConversationId;
+
+      if (!conversationId) {
+        const conversation = await createChatConversation(repositoryId, trimmedQuestion.slice(0, 60));
+        conversationId = conversation.id;
+        setActiveConversationId(conversation.id);
+        setChatConversations((current) => [conversation, ...current]);
+      }
+
+      if (!conversationId) return;
+
+      await askChatQuestion(repositoryId, conversationId, trimmedQuestion);
+      setChatInput("");
+      await loadChatConversations(conversationId);
+      await loadChatMessages(conversationId);
+    } catch (err) {
+      setChatError(err instanceof Error ? err.message : "Не удалось отправить сообщение.");
+    } finally {
+      setIsSendingMessage(false);
+    }
+  };
 
   const handleGenerate = async () => {
     if (!repositoryId) return;
@@ -394,6 +536,7 @@ function RepositoryDetailsPage({ theme, toggleTheme, userEmail, onLogout, userRo
             <button className={activeView === "critical" ? "active" : ""} onClick={() => setActiveView("critical")}>Критичные части</button>
             <button className={activeView === "quality" ? "active" : ""} onClick={() => setActiveView("quality")}>Оценка проекта</button>
             <button className={activeView === "versions" ? "active" : ""} onClick={() => setActiveView("versions")}>Версии</button>
+            <button className={activeView === "chat" ? "active" : ""} onClick={() => setActiveView("chat")}>RAG Chat</button>
           </div>
 
           {blockInfo && <p className="state-message">{blockInfo}</p>}
@@ -561,6 +704,105 @@ function RepositoryDetailsPage({ theme, toggleTheme, userEmail, onLogout, userRo
                     {version.is_latest_for_repository && <em>Актуальная</em>}
                   </button>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {activeView === "chat" && (
+            <div className="card chat-card">
+              <div className="repo-card-head">
+                <div>
+                  <h3>RAG-чат по репозиторию</h3>
+                  <p>Задавайте вопросы про структуру проекта, документацию и код.</p>
+                </div>
+                <div className="chat-actions">
+                  <button type="button" className="secondary-button" onClick={handleBuildChatIndex} disabled={isChatIndexing}>
+                    {isChatIndexing ? "Сборка..." : "Собрать индекс"}
+                  </button>
+                  <button type="button" className="primary-button" onClick={handleStartNewConversation}>
+                    Новый чат
+                  </button>
+                </div>
+              </div>
+
+              {chatInfo && <p className="state-message">{chatInfo}</p>}
+              {chatError && <p className="form-error">{chatError}</p>}
+
+              <div className="chat-shell">
+                <aside className="chat-sidebar">
+                  <h4>Разговоры</h4>
+                  {chatConversations.length === 0 && <p className="state-message">Пока нет сохранённых разговоров.</p>}
+                  <div className="chat-conversation-list">
+                    {chatConversations.map((conversation) => (
+                      <button
+                        type="button"
+                        key={conversation.id}
+                        className={`chat-conversation-item ${activeConversationId === conversation.id ? "active" : ""}`}
+                        onClick={() => {
+                          setActiveConversationId(conversation.id);
+                        }}
+                      >
+                        <strong>{conversation.title ?? "Новый чат"}</strong>
+                        <span>{safeDate(conversation.updated_at)}</span>
+                      </button>
+                    ))}
+                  </div>
+                </aside>
+
+                <div className="chat-panel">
+                  {isChatLoading && <p className="state-message">Загрузка сообщений...</p>}
+
+                  {!activeConversationId && !isChatLoading && (
+                    <div className="chat-empty-state">
+                      <p>Начните новый чат или выберите существующий разговор.</p>
+                    </div>
+                  )}
+
+                  {activeConversationId && (
+                    <div className="chat-messages">
+                      {chatMessages.map((message) => (
+                        <div key={message.id} className={`chat-message ${message.role}`}>
+                          <div className="chat-message-meta">
+                            <strong>{message.role === "user" ? "Вы" : "ИИ-ассистент"}</strong>
+                            <span>{safeDate(message.created_at)}</span>
+                          </div>
+                          <div className="chat-message-body">
+                            <ReactMarkdown>{message.content}</ReactMarkdown>
+                          </div>
+                          {message.sources && message.sources.length > 0 && (
+                            <div className="chat-sources">
+                              <strong>Источники:</strong>
+                              <ul>
+                                {message.sources.map((source) => (
+                                  <li key={`${message.id}-${source.chunk_id}`}>
+                                    {source.source_path ?? source.chunk_type}
+                                    {source.relevance_score ? ` · ${source.relevance_score.toFixed(2)}` : ""}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <form className="chat-composer" onSubmit={handleSendMessage}>
+                    <textarea
+                      value={chatInput}
+                      onChange={(event) => setChatInput(event.target.value)}
+                      placeholder="Спросите про проект, документацию или код..."
+                      rows={4}
+                      disabled={isSendingMessage}
+                    />
+                    <div className="chat-composer-actions">
+                      <span className="chat-hint">Ответы строятся на индексированном контексте репозитория.</span>
+                      <button type="submit" className="primary-button" disabled={isSendingMessage || !chatInput.trim()}>
+                        {isSendingMessage ? "Отправка..." : "Отправить"}
+                      </button>
+                    </div>
+                  </form>
+                </div>
               </div>
             </div>
           )}

@@ -152,6 +152,57 @@ export type CriticalPartsResponse = {
 
 export type ExportFormat = "markdown" | "txt" | "html" | "docx" | "json";
 
+export type ChatConversation = {
+  id: number;
+  repository_id: number;
+  user_id: number;
+  title: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ChatConversationListResponse = {
+  items: ChatConversation[];
+  total: number;
+};
+
+export type ChatSourceReference = {
+  chunk_id: number;
+  source_path: string | null;
+  chunk_type: string;
+  relevance_score: number;
+};
+
+export type ChatMessage = {
+  id: number;
+  conversation_id: number;
+  role: "user" | "assistant";
+  content: string;
+  sources: ChatSourceReference[] | null;
+  created_at: string;
+};
+
+export type ChatMessageListResponse = {
+  items: ChatMessage[];
+  total: number;
+};
+
+export type ChatIndexStatusResponse = {
+  repository_id: number;
+  total_chunks: number;
+  documentation_chunks: number;
+  code_chunks: number;
+  metadata_chunks: number;
+  status: string;
+  provider: string;
+};
+
+export type ChatAskQuestionResponse = {
+  answer: string;
+  sources: ChatSourceReference[];
+  provider: string;
+};
+
 function buildRepositoryQuery(filters: RepositoryFilters) {
   const params = new URLSearchParams();
 
@@ -310,4 +361,60 @@ export async function downloadExport(
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
+}
+
+export async function rebuildChatIndex(repositoryId: number) {
+  const response = await apiFetch(`/repositories/${repositoryId}/chat/index`, {
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, "Не удалось собрать индекс знаний"));
+  }
+
+  return response.json() as Promise<ChatIndexStatusResponse>;
+}
+
+export async function createChatConversation(repositoryId: number, title?: string | null) {
+  const response = await apiFetch(`/repositories/${repositoryId}/chat/conversations`, {
+    method: "POST",
+    body: JSON.stringify({ title: title ?? null }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, "Не удалось создать чат"));
+  }
+
+  return response.json() as Promise<ChatConversation>;
+}
+
+export async function getChatConversations(repositoryId: number) {
+  const response = await apiFetch(`/repositories/${repositoryId}/chat/conversations`, {
+    method: "GET",
+  });
+
+  if (!response.ok) throw new Error("Не удалось загрузить историю чата");
+  return response.json() as Promise<ChatConversationListResponse>;
+}
+
+export async function getChatMessages(repositoryId: number, conversationId: number) {
+  const response = await apiFetch(`/repositories/${repositoryId}/chat/conversations/${conversationId}/messages`, {
+    method: "GET",
+  });
+
+  if (!response.ok) throw new Error("Не удалось загрузить сообщения чата");
+  return response.json() as Promise<ChatMessageListResponse>;
+}
+
+export async function askChatQuestion(repositoryId: number, conversationId: number, question: string) {
+  const response = await apiFetch(`/repositories/${repositoryId}/chat/conversations/${conversationId}/messages`, {
+    method: "POST",
+    body: JSON.stringify({ question }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, "Не удалось отправить сообщение"));
+  }
+
+  return response.json() as Promise<ChatAskQuestionResponse>;
 }
